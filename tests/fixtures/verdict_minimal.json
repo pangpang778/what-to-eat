@@ -1,0 +1,49 @@
+{
+  "request": {
+    "location": "郑州",
+    "constraints": {
+      "taboos": []
+    },
+    "mode": "decide"
+  },
+  "candidates": [],
+  "verdict": {
+    "pick": {
+      "name": "（宿主 AI 建议：本地家常豫菜一份）",
+      "category": "豫菜"
+    },
+    "reason": "实时采集不可用，已降级为宿主 AI 建议（非实时采集）",
+    "alternates_hint": [],
+    "degraded": [
+      "collect_failed: 启发式孪生",
+      "jev_disabled: 宿主 AI 复核"
+    ]
+  },
+  "alerts": [
+    {
+      "source": "RULE",
+      "type": "降级",
+      "level": "advisory",
+      "title": "采集不可用，已降级为宿主 AI 建议",
+      "detail": "OpenCLI 不可用或零结果；本次拍板未经实时采集与 jev 筛选。"
+    }
+  ],
+  "pipeline": {
+    "collect": {
+      "ok": false,
+      "notes": 0,
+      "images": 0,
+      "tool": "opencli xiaohongshu search/note/download",
+      "degraded": "collect_failed"
+    },
+    "jev": {
+      "ok": false,
+      "calls": 0,
+      "limit": 20,
+      "threshold": 7,
+      "adopted": 0,
+      "degraded": 1,
+      "reason": "no_key"
+    }
+  }
+}

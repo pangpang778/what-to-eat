@@ -1,0 +1,155 @@
+{
+  "request": {
+    "location": "郑州",
+    "constraints": {
+      "taboos": [
+        "香菜"
+      ],
+      "budget": "人均80以内",
+      "party": "2人"
+    },
+    "mode": "decide"
+  },
+  "candidates": [
+    {
+      "name": "葛记焖饼",
+      "category": "豫菜",
+      "description": "老字号焖饼，饼丝筋道配大灶高汤，本地人认的老味道",
+      "ll": [
+        113.6654,
+        34.7472
+      ],
+      "image": {
+        "url": "assets-images/zhengzhou-geji.jpg",
+        "source": "小红书《郑州本地人排队的老店》@爱吃的小碗",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "葛记焖饼店面与烙饼丝特写",
+        "jev_score": 8.7,
+        "adopted": true
+      },
+      "note_source": {
+        "title": "郑州本地人排队的老店",
+        "author": "爱吃的小碗"
+      }
+    },
+    {
+      "name": "方中山胡辣汤",
+      "category": "早餐/汤类",
+      "description": "胡椒味冲的胡辣汤配水煎包，郑州早餐招牌",
+      "image": {
+        "url": "assets-images/fangzhongshan.jpg",
+        "source": "小红书《郑州胡辣汤测评》@中原干饭王",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "胡辣汤碗特写与水煎包拼盘",
+        "jev_score": 9.1,
+        "adopted": true
+      },
+      "note_source": {
+        "title": "郑州胡辣汤测评",
+        "author": "中原干饭王"
+      }
+    },
+    {
+      "name": "京都老蔡记",
+      "category": "豫菜",
+      "description": "蒸饺百年老店，一口一鲜汁",
+      "image": {
+        "url": "assets-images/caiji.jpg",
+        "source": "小红书《郑州老字号盘点》@老郑州味道",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "蒸饺笼屉与蘸汁特写",
+        "jev_score": 6.2,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "郑州老字号盘点",
+        "author": "老郑州味道"
+      }
+    },
+    {
+      "name": "合记烩面",
+      "category": "豫菜",
+      "description": "羊肉烩面汤白面筋，郑州人从小吃到大",
+      "image": {
+        "url": "assets-images/heji.jpg",
+        "source": "小红书《郑州烩面地图》@面食情报局",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "羊肉烩面大海碗与粉丝木耳配菜",
+        "jev_score": 8.4,
+        "adopted": true
+      },
+      "note_source": {
+        "title": "郑州烩面地图",
+        "author": "面食情报局"
+      }
+    }
+  ],
+  "verdict": {
+    "pick": {
+      "name": "方中山胡辣汤",
+      "category": "早餐/汤类",
+      "description": "胡椒味冲的胡辣汤配水煎包，郑州早餐招牌"
+    },
+    "reason": "jev 评分最高（9.1），且未在近期吃过记录中——热度与新鲜度兼得",
+    "image": {
+      "url": "assets-images/fangzhongshan.jpg",
+      "source": "小红书《郑州胡辣汤测评》@中原干饭王",
+      "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+      "alt_description": "胡辣汤碗特写与水煎包拼盘",
+      "jev_score": 9.1,
+      "adopted": true
+    },
+    "alternates_hint": [
+      "葛记焖饼",
+      "合记烩面"
+    ],
+    "degraded": []
+  },
+  "memory": {
+    "eaten_log": [
+      {
+        "location": "郑州",
+        "pick": "葛记焖饼",
+        "date": "2026-09-21",
+        "rating": "up"
+      },
+      {
+        "location": "西安",
+        "pick": "老孙家泡馍",
+        "date": "2026-09-15"
+      }
+    ],
+    "taboos": [
+      "香菜"
+    ],
+    "weights": {
+      "葛记焖饼": 1.2,
+      "京都老蔡记": 0.4
+    }
+  },
+  "alerts": [
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「京都老蔡记」素材 jev 6.2 < 7 未达标，已从候选剔除",
+      "detail": "候选池 4 个，3 个达标；阈值 7，限次 20，实际调用 4 次。"
+    }
+  ],
+  "pipeline": {
+    "collect": {
+      "ok": true,
+      "notes": 3,
+      "images": 4,
+      "tool": "opencli xiaohongshu search/note/download"
+    },
+    "jev": {
+      "ok": true,
+      "calls": 4,
+      "limit": 20,
+      "threshold": 7,
+      "adopted": 3,
+      "degraded": 0
+    }
+  }
+}
