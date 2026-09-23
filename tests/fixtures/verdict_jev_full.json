@@ -90,7 +90,7 @@
       "category": "早餐/汤类",
       "description": "胡椒味冲的胡辣汤配水煎包，郑州早餐招牌"
     },
-    "reason": "jev 评分最高（9.1），且未在近期吃过记录中——热度与新鲜度兼得",
+    "reason": "jev 评分最高（9.1），且未在近期吃过记录中",
     "image": {
       "url": "assets-images/fangzhongshan.jpg",
       "source": "小红书《郑州胡辣汤测评》@中原干饭王",
@@ -149,7 +149,8 @@
       "limit": 20,
       "threshold": 7,
       "adopted": 3,
-      "degraded": false
+      "degraded": false,
+      "reason": null
     }
   }
 }

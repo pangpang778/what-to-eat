@@ -48,7 +48,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `alerts[]` | `object[]?` | `{source: "JEV"\|"RULE", type, title, detail, level: "advisory"}`（本 skill 无 blocking——拍板永不失败） |
-| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok, calls, limit, threshold, adopted, degraded, reason?}}`——对话内披露 |
+| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok: bool, calls: int, limit: int, threshold: int, adopted: int, degraded: bool, reason?: string}}`——对话内披露 |
 
 ## 兼容规则
 

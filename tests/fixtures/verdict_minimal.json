@@ -42,7 +42,7 @@
       "limit": 20,
       "threshold": 7,
       "adopted": 0,
-      "degraded": 1,
+      "degraded": true,
       "reason": "no_key"
     }
   }
