@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import http.client
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -98,7 +99,11 @@ def _urllib_transport(method, url, payload, headers, timeout):
     request = urllib.request.Request(url, data=payload, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, response.read().decode("utf-8")
+            try:
+                raw = response.read()
+            except http.client.HTTPException:
+                raise OSError("incomplete read")
+            return response.status, raw.decode("utf-8", errors="replace")
     except urllib.error.HTTPError as error:  # 4xx/5xx 以 HTTPError 形态出现
         return error.code, error.read().decode("utf-8", "replace")
 

@@ -24,6 +24,14 @@ def _cold_start() -> dict[str, Any]:
     return {"eaten_log": [], "taboos": [], "weights": {}}
 
 
+def _to_float(value: Any, default: float = 1.0) -> float:
+    """权重读数容错：手改文件里的非数值权重回落默认，保住「产物永不失败」。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_memory(path: str | Path) -> dict[str, Any]:
     """读记忆文件；不存在或损坏 JSON → 冷启动默认（不覆盖原文件）。"""
     p = Path(path)
@@ -48,7 +56,7 @@ def load_memory(path: str | Path) -> dict[str, Any]:
 def save_memory(path: str | Path, memory: dict[str, Any]) -> None:
     """原子写（tmp + rename），ensure_ascii=False 保持中文可读。"""
     p = Path(path)
-    tmp = p.with_name(p.name + ".tmp")
+    tmp = p.with_name(p.name + f".{os.getpid()}.tmp")
     tmp.write_text(
         json.dumps(memory, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -93,7 +101,7 @@ def filter_candidates(
             by_taboo.append(name)
         elif name in recent:
             by_recent.append(name)
-        elif float(weights.get(name, WEIGHT_DEFAULT)) < WEIGHT_FILTER_BELOW:
+        elif _to_float(weights.get(name, WEIGHT_DEFAULT)) < WEIGHT_FILTER_BELOW:
             by_weight.append(name)
         else:
             eligible.append(cand)

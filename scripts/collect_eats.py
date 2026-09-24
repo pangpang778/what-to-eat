@@ -16,6 +16,10 @@ import re
 import shutil
 import subprocess
 import urllib.parse
+import http.client
+import ipaddress
+import socket
+from urllib.parse import urlparse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -234,18 +238,22 @@ def _image_alt(image: dict[str, Any]) -> str:
 
 
 def _download(url: str, dest: Path, timeout: int = IMAGE_TIMEOUT) -> bool:
-    """Download an image to dest（CDN 链接会过期，必须本地化）。失败返回 False。"""
+    """下载图片到本地；只允许 https 公网地址（untrusted UGC 提供的 URL 不可信）。"""
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "what-to-eat/1.0"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read()
-    except (OSError, ValueError):
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.hostname:
+            return False
+        # 拒绝私网/环回/链路本地（SSRF 防护：URL 来自 untrusted 素材）
+        infos = socket.getaddrinfo(parsed.hostname, None)
+        for info in infos:
+            if ipaddress.ip_address(info[4][0]).is_private or ipaddress.ip_address(info[4][0]).is_loopback                     or ipaddress.ip_address(info[4][0]).is_link_local:
+                return False
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=timeout) as response, open(dest, "wb") as handle:
+            handle.write(response.read())
+        return True
+    except (OSError, ValueError, http.client.HTTPException):
         return False
-    if not payload:
-        return False
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(payload)
-    return True
 
 
 def _category(text: str) -> str:

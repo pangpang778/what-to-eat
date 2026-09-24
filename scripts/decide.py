@@ -186,7 +186,7 @@ def run_pipeline(
     def rank(cand: dict[str, Any]) -> tuple[float, str]:
         score = (cand.get("image") or {}).get("jev_score")
         base = float(score) if isinstance(score, (int, float)) else 0.0
-        weight = float(weights.get(str(cand.get("name", "")), 1.0))
+        weight = memory_mod._to_float(weights.get(str(cand.get("name", "")), 1.0))
         key = base * weight + _jitter(location, today, str(cand.get("name", "")))
         return (-key, str(cand.get("name", "")))
 

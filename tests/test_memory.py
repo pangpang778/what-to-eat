@@ -125,6 +125,14 @@ class FilterTests(unittest.TestCase):
         self.assertIn("低权重剔除: 京都老蔡记", note)
 
 
+    def test_dirty_weights_do_not_crash(self):
+        """手改文件写入非数值权重 → 回落默认权重，不崩不过滤（review HIGH 回归）。"""
+        dirty = {"eaten_log": [], "taboos": [], "weights": {"坏数据": "abc"}}
+        candidates = [{"name": "坏数据", "category": "测试", "description": "x"}]
+        eligible, _note = memory.filter_candidates(candidates, dirty, "郑州")
+        self.assertEqual([c["name"] for c in eligible], ["坏数据"])
+
+
 class RecordAndRatingTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

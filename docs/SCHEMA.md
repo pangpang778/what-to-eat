@@ -32,7 +32,7 @@
 | `reason` | `string` | 一句话理由，必须由 schema 真实字段支撑（热度/匹配/没吃过/省时），无编造 |
 | `image` | `object?` | 达标候选的 image 原样（untrusted 标记随之） |
 | `alternates_hint[]` | `string[]` | 「换一个」的次优候选名（≤3） |
-| `degraded[]` | `string[]` | 显式降级记录（如 "collect_failed: 启发式孪生"、"jev_disabled: 宿主 AI 复核"、"jev_limit_reached"） |
+| `degraded[]` | `string[]` | 显式降级记录（如 "collect_failed: 启发式孪生"、"jev_disabled: 宿主 AI 复核"、"limit_reached"） |
 | `all_candidates_rejected` | `bool?` | jev 全拒 → 启发式孪生拍板（degraded 同步记录） |
 
 ## 记忆（memory，独立状态文件，schema 缝的输入/输出）
@@ -48,7 +48,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `alerts[]` | `object[]?` | `{source: "JEV"\|"RULE", type, title, detail, level: "advisory"}`（本 skill 无 blocking——拍板永不失败） |
-| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok: bool, calls: int, limit: int, threshold: int, adopted: int, degraded: bool, reason?: string}}`——对话内披露 |
+| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok: bool, calls: int, limit: int, threshold: float, adopted: int, degraded: bool, reason?: string}}`——对话内披露 |
 
 ## 兼容规则
 
