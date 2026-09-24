@@ -1,0 +1,205 @@
+{
+  "request": {
+    "location": "郑州",
+    "constraints": {
+      "taboos": [],
+      "budget": "",
+      "party": ""
+    },
+    "mode": "decide"
+  },
+  "candidates": [
+    {
+      "name": "方中山胡辣汤",
+      "category": "早餐/汤食",
+      "description": "郑州早餐招牌，胡椒香浓的胡辣汤配烧麦油馍头，本地人从小吃到大",
+      "image": {
+        "url": "images/zhengzhou-hulatang-shaomai.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "胡辣汤配烧麦与油馍头，桌面实景",
+        "jev_score": 7.066666666666666,
+        "adopted": true
+      },
+      "note_source": {
+        "title": "个人认为郑州无法超越的12家（无广合集）",
+        "author": "谷堆"
+      }
+    },
+    {
+      "name": "砂锅焖鸡",
+      "category": "豫菜/砂锅",
+      "description": "砂锅端上桌还冒热气，土豆鸡块浓汤薄荷点睛，配饼子是本地吃法",
+      "image": {
+        "url": "images/zhengzhou-claypot-chicken.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "砂锅焖鸡冒热气，土豆鸡块浓汤配薄荷",
+        "jev_score": 5.8999999999999995,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "个人认为郑州无法超越的12家（无广合集）",
+        "author": "谷堆"
+      }
+    },
+    {
+      "name": "豆花日记（豆花奶茶）",
+      "category": "甜品饮品",
+      "description": "豆花打底的招牌奶茶，甜品档排队款",
+      "image": {
+        "url": "images/zhengzhou-douhua-riji.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "豆花日记招牌豆花奶茶四杯拼",
+        "jev_score": 3.8666666666666667,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "个人认为郑州无法超越的12家（无广合集）",
+        "author": "谷堆"
+      }
+    },
+    {
+      "name": "麻辣烫（面筋腐竹款）",
+      "category": "小吃/麻辣烫",
+      "description": "面筋腐竹为主角的麻辣烫，辣椒油香，市井小吃档",
+      "image": {
+        "url": "images/zhengzhou-malatang.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "面筋腐竹麻辣烫配丸子和西兰花",
+        "jev_score": 5.366666666666667,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "个人认为郑州无法超越的12家（无广合集）",
+        "author": "谷堆"
+      }
+    }
+  ],
+  "verdict": {
+    "pick": {
+      "name": "方中山胡辣汤",
+      "category": "早餐/汤食",
+      "description": "郑州早餐招牌，胡椒香浓的胡辣汤配烧麦油馍头，本地人从小吃到大"
+    },
+    "reason": "jev 评分最高（7.06667），且未在近期吃过记录中",
+    "alternates_hint": [],
+    "degraded": [],
+    "image": {
+      "url": "images/zhengzhou-hulatang-shaomai.jpg",
+      "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+      "alt_description": "胡辣汤配烧麦与油馍头，桌面实景",
+      "jev_score": 7.066666666666666,
+      "adopted": true
+    }
+  },
+  "memory": {
+    "eaten_log": [],
+    "taboos": [],
+    "weights": {}
+  },
+  "alerts": [
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「砂锅焖鸡」素材 jev 5.9 < 7 未达标，已从候选剔除",
+      "detail": "候选池 4 个，1 个达标；阈值 7，限次 20，实际调用 4 次。"
+    },
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「豆花日记（豆花奶茶）」素材 jev 3.86667 < 7 未达标，已从候选剔除",
+      "detail": "候选池 4 个，1 个达标；阈值 7，限次 20，实际调用 4 次。"
+    },
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「麻辣烫（面筋腐竹款）」素材 jev 5.36667 < 7 未达标，已从候选剔除",
+      "detail": "候选池 4 个，1 个达标；阈值 7，限次 20，实际调用 4 次。"
+    }
+  ],
+  "pipeline": {
+    "collect": {
+      "ok": true,
+      "candidates": [
+        {
+          "name": "方中山胡辣汤",
+          "category": "早餐/汤食",
+          "description": "郑州早餐招牌，胡椒香浓的胡辣汤配烧麦油馍头，本地人从小吃到大",
+          "image": {
+            "url": "images/zhengzhou-hulatang-shaomai.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "胡辣汤配烧麦与油馍头，桌面实景",
+            "jev_score": 7.066666666666666,
+            "adopted": true
+          },
+          "note_source": {
+            "title": "个人认为郑州无法超越的12家（无广合集）",
+            "author": "谷堆"
+          }
+        },
+        {
+          "name": "砂锅焖鸡",
+          "category": "豫菜/砂锅",
+          "description": "砂锅端上桌还冒热气，土豆鸡块浓汤薄荷点睛，配饼子是本地吃法",
+          "image": {
+            "url": "images/zhengzhou-claypot-chicken.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "砂锅焖鸡冒热气，土豆鸡块浓汤配薄荷",
+            "jev_score": 5.8999999999999995,
+            "adopted": false
+          },
+          "note_source": {
+            "title": "个人认为郑州无法超越的12家（无广合集）",
+            "author": "谷堆"
+          }
+        },
+        {
+          "name": "豆花日记（豆花奶茶）",
+          "category": "甜品饮品",
+          "description": "豆花打底的招牌奶茶，甜品档排队款",
+          "image": {
+            "url": "images/zhengzhou-douhua-riji.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "豆花日记招牌豆花奶茶四杯拼",
+            "jev_score": 3.8666666666666667,
+            "adopted": false
+          },
+          "note_source": {
+            "title": "个人认为郑州无法超越的12家（无广合集）",
+            "author": "谷堆"
+          }
+        },
+        {
+          "name": "麻辣烫（面筋腐竹款）",
+          "category": "小吃/麻辣烫",
+          "description": "面筋腐竹为主角的麻辣烫，辣椒油香，市井小吃档",
+          "image": {
+            "url": "images/zhengzhou-malatang.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "面筋腐竹麻辣烫配丸子和西兰花",
+            "jev_score": 5.366666666666667,
+            "adopted": false
+          },
+          "note_source": {
+            "title": "个人认为郑州无法超越的12家（无广合集）",
+            "author": "谷堆"
+          }
+        }
+      ],
+      "notes": 8,
+      "images": 4,
+      "tool": "opencli + 宿主 AI vision 提取"
+    },
+    "jev": {
+      "ok": true,
+      "calls": 4,
+      "limit": 20,
+      "threshold": 7.0,
+      "adopted": 1,
+      "degraded": false,
+      "reason": null
+    }
+  }
+}

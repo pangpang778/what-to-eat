@@ -171,7 +171,7 @@ class PayloadContractTests(unittest.TestCase):
 
 class ScoreCandidateTests(unittest.TestCase):
     def test_adopted_when_score_meets_threshold(self):
-        transport = RecordingTransport([ok_body(8.5)])
+        transport = RecordingTransport([ok_body(2.55)])  # raw 0-3 档，展示分 2.55/3*10=8.5
         with clean_env():
             client = JevClient(api_key="k", transport=transport)
             result = jev_client.score_candidate(client, CANDIDATE)
@@ -184,11 +184,11 @@ class ScoreCandidateTests(unittest.TestCase):
         self.assertIn("胡辣汤成品图", state)
 
     def test_rejected_when_score_below_threshold(self):
-        transport = RecordingTransport([ok_body(4)])
+        transport = RecordingTransport([ok_body(1.2)])  # raw 1.2 -> 展示分 4.0
         with clean_env():
             client = JevClient(api_key="k", transport=transport)
             result = jev_client.score_candidate(client, CANDIDATE)
-        self.assertEqual(result["jev_score"], 4.0)
+        self.assertAlmostEqual(result["jev_score"], 4.0, places=6)
         self.assertFalse(result["adopted"])
 
     def test_disabled_zero_calls(self):
@@ -211,14 +211,14 @@ class ScoreCandidateTests(unittest.TestCase):
         self.assertEqual(result["degraded"], jev_client.HTTP_5XX)
 
     def test_candidate_without_image_still_scores(self):
-        transport = RecordingTransport([ok_body(7)])
+        transport = RecordingTransport([ok_body(2.1)])  # raw 2.1 -> 展示分 7.0，恰好达阈值
         with clean_env():
             client = JevClient(api_key="k", transport=transport)
             result = jev_client.score_candidate(
                 client, {"name": "葛记焖饼", "category": "面食", "description": "配汤吃"}
             )
         self.assertTrue(result["adopted"])  # 7 >= 7 阈值边界
-        self.assertEqual(result["jev_score"], 7.0)
+        self.assertAlmostEqual(result["jev_score"], 7.0, places=6)
 
 
 class SummaryTests(unittest.TestCase):

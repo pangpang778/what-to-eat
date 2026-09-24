@@ -26,6 +26,14 @@ from typing import Any, Callable
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"  # 必填：缺 model 字段会被 422 拒掉
 QUESTION_KEY = "credibility"
+# 4 档 criteria 真机验证（jev 按 0-3 档插值返回 raw score，展示分 = raw/3*10）
+SCORE_INSTRUCTIONS = "这个美食候选作为「今晚吃什么」拍板推荐的素材匹配度与可信度评分（1-10）。"
+SCORE_CRITERIA = [
+    "1-3 描述空洞、明显广告或与地点无关",
+    "4-6 有提及但证据弱、辨识度低",
+    "7-8 描述具体、本地认可、有真实素材支撑",
+    "9-10 高度具体且多来源佐证、招牌级",
+]
 DEFAULT_TIMEOUT = 5.0
 DEFAULT_RETRIES = 1  # 首次失败后重试 1 次（每次尝试都计入限次预算）
 DEFAULT_CALL_LIMIT = 20
@@ -130,7 +138,13 @@ class JevClient:
             {
                 "state": state,
                 "model": MODEL,
-                "questions": {QUESTION_KEY: {"type": "score"}},
+                "questions": {
+                    QUESTION_KEY: {
+                        "type": "score",
+                        "instructions": SCORE_INSTRUCTIONS,
+                        "criteria": SCORE_CRITERIA,
+                    }
+                },
             },
             ensure_ascii=False,
         ).encode("utf-8")
@@ -188,9 +202,11 @@ class JevClient:
         if isinstance(value, dict):
             value = value.get("score")
         try:
-            return max(0.0, min(10.0, float(value)))
+            raw = float(value)
         except (TypeError, ValueError):
             return None
+        # jev 对 4 档 criteria 做 0-3 档插值（真机验证），归一化到 0-10 展示分
+        return max(0.0, min(10.0, raw / 3.0 * 10.0))
 
 
 def score_candidate(client: JevClient, candidate: dict[str, Any]) -> dict[str, Any]:

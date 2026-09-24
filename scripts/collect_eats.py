@@ -29,7 +29,9 @@ CREDIBILITY = "untrusted · 小红书 UGC（OpenCLI 采集）"
 # 双关键词搜索策略（CONTEXT.md「采集」）：两词都搜，结果按 url 去重合并
 SEARCH_SUFFIXES = ("美食攻略", "必吃")
 
-OPENCLI_FLAGS = ("-f", "json", "--window", "background", "--site-session", "persistent")
+# ponytail: --window background --site-session persistent 真机实测返回空结果（会话态问题），
+# 最小 flag 集（-f json）实测有结果；若未来需要后台窗口再单测恢复
+OPENCLI_FLAGS = ("-f", "json")
 
 # 规则解析用品类关键词表（命中即停；未命中归「美食」）
 CATEGORY_KEYWORDS: tuple[tuple[str, str], ...] = (
