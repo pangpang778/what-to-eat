@@ -112,5 +112,39 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIn("CONTEXT.md", RAW)
 
 
+class ClarifyRoundV2ContractTests(unittest.TestCase):
+    """反问轮 v2（spec #9）：五问 + 随便语义 + 自动推断层。"""
+
+    def test_five_questions_present(self):
+        # 五问维度在场（SKILL.md 文案与 docs/SCHEMA.md 反问轮 v2 契约互为镜像）
+        for keyword in ("location_anchor", "cuisine_pref", "taboos", "party", "budget"):
+            self.assertIn(keyword, RAW)
+        self.assertIn("五问", RAW)
+
+    def test_single_round_le_5(self):
+        self.assertIn("≤5 问", RAW)
+
+    def test_no_preference_semantics_stated(self):
+        self.assertIn("no_preference", RAW)
+        # 五问全随便 → 直接拍板
+        self.assertIn("直接拍板", RAW)
+
+    def test_auto_inference_layer_stated(self):
+        # 自动推断层（不问但生效）：时段→夜宵、近 3 天吃过、记忆忌口
+        self.assertIn("夜宵", RAW)
+
+    def test_intent_not_persisted_rule_stated(self):
+        self.assertIn("意图不沉淀进记忆", RAW)
+
+    def test_schema_doc_carries_v2_contract(self):
+        schema = Path("docs/SCHEMA.md").read_text(encoding="utf-8")
+        for keyword in ("反问轮 v2", "location_anchor", "cuisine_pref", "no_preference"):
+            self.assertIn(keyword, schema)
+        # 加权系数契约：文档与代码互锁
+        self.assertIn("×1.5", schema)
+        from scripts.decide import CUISINE_BOOST
+        self.assertEqual(CUISINE_BOOST, 1.5)
+
+
 if __name__ == "__main__":
     unittest.main()

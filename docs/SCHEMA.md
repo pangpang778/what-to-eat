@@ -8,10 +8,20 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `location` | `string` | 地点（城市/商圈）。可由宿主 AI 从上下文或记忆文件推断 |
-| `constraints.taboos[]` | `string[]` | 忌口/过敏（硬过滤） |
-| `constraints.budget` | `string?` | 人均预算带（如 "100 以内"），建议层 |
-| `constraints.party` | `string?` | 几个人/场景（独食/朋友聚/家庭） |
+| `constraints.taboos[]` | `string[]` | 忌口/过敏/不吃辣（硬过滤） |
+| `constraints.location_anchor` | `string \| {"no_preference": true}?` | 位置锚点（如 "天一广场附近"）→ 细化搜索词；不做坐标过滤 |
+| `constraints.cuisine_pref` | `string \| {"no_preference": true}?` | 口味/菜系偏向（如 "湘菜"）→ 拍板排序加权（加权系数见下），不硬剪 |
+| `constraints.party` | `string \| {"no_preference": true}?` | 怎么吃+几个人（如 "堂食 2 人" / "外卖一人食"）→ 进搜索词与 jev 评分描述 |
+| `constraints.budget` | `string \| {"no_preference": true}?` | 预算带（如 "人均 50"）→ 软信号：搜索词 + jev 评分描述，**不硬剪**；候选明确提价格时输出对照 |
 | `mode` | `"decide"\|"alternate"` | 拍板 / 换一个（出次优且不重复上次） |
+
+### 反问轮 v2 契约（意图 Intent）
+
+- 反问轮每次拍板前执行（地点已知不问地点）：五问 = 位置锚点 / 口味偏向 / 忌口 / 怎么吃+人数 / 预算；一轮问完，每问附示例。
+- **随便（No-Preference）**：用户答「随便/不知道/都行」→ 该维度记 `{"no_preference": true}`（显式标记，非空值）；五问全随便 → 直接拍板，行为等价无意图。
+- 意图不沉淀进记忆（「记住我不吃 X」的显式指令才写 taboos）。
+- 自动推断层（不问但生效）：时段（21 点后搜索词加「夜宵」）；近 3 天吃过排除；记忆忌口硬剪。
+- 菜系加权系数：命中的候选排序键 ×1.5（固定系数，改动须同步本文件与本测试）。
 
 ## 候选（candidates[]）
 

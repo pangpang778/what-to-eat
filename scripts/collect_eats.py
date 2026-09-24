@@ -163,8 +163,34 @@ def _records(data: Any, *keys: str) -> list[dict[str, Any]]:
     return []
 
 
+def search_keywords(location: str, constraints: dict[str, Any] | None = None) -> list[str]:
+    """反问轮 v2：意图合成搜索词（docs/SCHEMA.md 反问轮 v2 契约）。
+
+    位置锚点/场景（外卖、一人食）/预算 → 附加词；no_preference 维度不进搜索词。
+    返回双关键词（SEARCH_SUFFIXES 各拼一条）。
+    """
+    head = str(location or "").strip()
+    extras: list[str] = []
+    cons = constraints if isinstance(constraints, dict) else {}
+    anchor = cons.get("location_anchor")
+    if isinstance(anchor, str) and anchor.strip():
+        extras.append(anchor.strip())
+    party = cons.get("party")
+    if isinstance(party, str) and party.strip():
+        extras.append(party.strip())
+    budget = cons.get("budget")
+    if isinstance(budget, str) and budget.strip():
+        extras.append(budget.strip())
+    if extras:
+        head = "{} {}".format(head, " ".join(extras))
+    return ["{} {}".format(head, suffix) for suffix in SEARCH_SUFFIXES]
+
+
 def _search_notes(
-    location: str, search_limit: int, timeout: int
+    location: str,
+    search_limit: int,
+    timeout: int,
+    keywords: list[str] | None = None,
 ) -> "tuple[list[dict[str, Any]], dict[str, Any] | None]":
     """双关键词搜索并按 url 去重；返回 (notes, error)，error 非 None 即失败路径。
 
@@ -173,13 +199,14 @@ def _search_notes(
     seen: set[str] = set()
     notes: list[dict[str, Any]] = []
     last_error: dict[str, Any] | None = None
-    for suffix in SEARCH_SUFFIXES:
+    use_keywords = keywords or search_keywords(location)
+    for query in use_keywords:
         result = _run_json(
             [
                 "opencli",
                 "xiaohongshu",
                 "search",
-                "{} {}".format(location, suffix),
+                query,
                 "--limit",
                 str(search_limit),
                 *OPENCLI_FLAGS,
@@ -205,10 +232,18 @@ def _read_note(url: str, timeout: int) -> dict[str, Any]:
     return _run_json(["opencli", "xiaohongshu", "note", url, *OPENCLI_FLAGS], timeout=timeout)
 
 
-def _detail_fields(data: Any) -> "tuple[str, list[dict[str, Any]]]":
-    """Extract note full text and image list from an OpenCLI note payload."""
+def _detail_fields(data: Any) -> "tuple[str, list[dict[str, Any]], str]":
+    """Extract note full text, image list, and engagement line from an
+    OpenCLI note payload. engagement 是 likes/collects 人气细节（jev 9-10
+    档 criteria 的证据），拼进评分描述。"""
     text = ""
     images: list[dict[str, Any]] = []
+    engagement = ""
+    # opencli note -f json 回 field-value 行数组；先归一成 dict 再取字段
+    if isinstance(data, list) and data and all(
+        isinstance(item, dict) and "field" in item for item in data
+    ):
+        data = {item["field"]: item.get("value") for item in data}
     if isinstance(data, dict):
         for key in ("desc", "text", "content"):
             value = data.get(key)
@@ -218,7 +253,15 @@ def _detail_fields(data: Any) -> "tuple[str, list[dict[str, Any]]]":
         raw = data.get("images")
         if isinstance(raw, list):
             images = [item for item in raw if isinstance(item, dict)]
-    return text, images
+        likes = str(data.get("likes") or "").strip()
+        collects = str(data.get("collects") or "").strip()
+        parts = []
+        if likes.isdigit():
+            parts.append("点赞 {}".format(likes))
+        if collects.isdigit():
+            parts.append("收藏 {}".format(collects))
+        engagement = " · ".join(parts)
+    return text, images, engagement
 
 
 def _image_url(image: dict[str, Any]) -> str:
@@ -296,6 +339,7 @@ def collect(
     workdir: str | Path,
     search_limit: int = 8,
     timeout: int = DEFAULT_TIMEOUT,
+    constraints: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """采集小红书美食笔记，产出拍板 schema 的候选素材。
 
@@ -317,7 +361,7 @@ def collect(
         failed["message"] = "location is empty"
         return failed
     try:
-        return _collect(str(location), Path(workdir), search_limit, timeout, failed)
+        return _collect(str(location), Path(workdir), search_limit, timeout, failed, constraints)
     except Exception as exc:  # 兜底：产物永不失败
         failed["message"] = "unexpected: {}".format(exc)
         return failed
@@ -329,9 +373,11 @@ def _collect(
     search_limit: int,
     timeout: int,
     failed: dict[str, Any],
+    constraints: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workdir.mkdir(parents=True, exist_ok=True)  # 根因修：工作目录由 collect 自建，调用方不用记得 mkdir
-    notes, error = _search_notes(location, search_limit, timeout)
+    keywords = search_keywords(location, constraints)
+    notes, error = _search_notes(location, search_limit, timeout, keywords)
     if error is not None:
         failed["message"] = str(error.get("message") or error.get("error") or "search failed")
         return failed
@@ -343,11 +389,11 @@ def _collect(
         author = str(note.get("author") or note.get("author_name") or "").strip()
         url = str(note.get("url") or note.get("link") or "").strip()
 
-        text, raw_images = "", []
+        text, raw_images, engagement = "", [], ""
         if url:
             detail = _read_note(url, timeout)
             if detail["ok"] and detail.get("data") is not None:
-                text, raw_images = _detail_fields(detail["data"])
+                text, raw_images, engagement = _detail_fields(detail["data"])
 
         source = url or "小红书"
         localized = _localize_images(raw_images, index + 1, workdir, source)
@@ -365,6 +411,8 @@ def _collect(
                 names.append(name)
 
         description = (text.splitlines() or [""])[0][:120] if text else title
+        if engagement:
+            description = "{}（{}）".format(description, engagement)
         category = _category(title + text)
         for name in names:
             candidate: dict[str, Any] = {

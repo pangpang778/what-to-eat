@@ -188,3 +188,42 @@ class ImageLocalizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SearchKeywordsV2Tests(unittest.TestCase):
+    """反问轮 v2：意图合成搜索词（spec #9）。"""
+
+    def test_no_constraints_falls_back_to_location(self):
+        keywords = collect_eats.search_keywords("宁波")
+        self.assertEqual(
+            keywords,
+            ["{} {}".format("宁波", s) for s in collect_eats.SEARCH_SUFFIXES],
+        )
+
+    def test_string_extras_appended(self):
+        keywords = collect_eats.search_keywords(
+            "宁波",
+            {"location_anchor": "天一广场附近", "party": "外卖一人食", "budget": "人均 50"},
+        )
+        self.assertEqual(
+            keywords,
+            ["宁波 天一广场附近 外卖一人食 人均 50 {}".format(s) for s in collect_eats.SEARCH_SUFFIXES],
+        )
+
+    def test_no_preference_and_invalid_dimensions_skipped(self):
+        # no_preference（显式标记）与非字符串值都不进搜索词
+        keywords = collect_eats.search_keywords(
+            "宁波",
+            {"location_anchor": {"no_preference": True}, "cuisine_pref": 123, "budget": "  "},
+        )
+        self.assertEqual(
+            keywords,
+            ["{} {}".format("宁波", s) for s in collect_eats.SEARCH_SUFFIXES],
+        )
+
+    def test_collect_passes_constraints_through(self):
+        # collect(constraints=…) → 搜索词带意图
+        with mock.patch.object(collect_eats, "search_keywords", wraps=collect_eats.search_keywords) as spy:
+            collect_eats.collect("宁波", Path("build/test-constraints"), constraints={"party": "堂食 2 人"})
+            called = spy.call_args
+        self.assertEqual(called.args[1], {"party": "堂食 2 人"})

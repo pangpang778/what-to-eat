@@ -23,6 +23,8 @@ from datetime import date
 from typing import Any
 
 from scripts import collect_eats, jev_client
+
+CUISINE_BOOST = 1.5  # 菜系偏向加权系数（docs/SCHEMA.md 反问轮 v2 契约）
 from scripts import memory as memory_mod
 
 ADVISORY = "advisory"
@@ -51,10 +53,18 @@ def run_pipeline(
     alerts: list[dict[str, Any]] = []
     degraded: list[str] = []
     location = str(request.get("location", "")).strip()
+    constraints = request.get("constraints") if isinstance(request.get("constraints"), dict) else {}
+    # 反问轮 v2：意图上下文进 jev 评分描述（no_preference 维度不进）
+    _ctx_parts = [
+        str(constraints.get(k)).strip()
+        for k in ("party", "budget", "location_anchor")
+        if isinstance(constraints.get(k), str) and str(constraints.get(k)).strip()
+    ]
+    intent_context = "；用餐场景/意图：{}".format("，".join(_ctx_parts)) if _ctx_parts else ""
 
     # 1. 采集（collect 自身承诺不抛；双保险）
     try:
-        collected = collect_eats.collect(location, workdir)
+        collected = collect_eats.collect(location, workdir, constraints=constraints)
     except Exception as exc:
         collected = {
             "ok": False,
@@ -90,7 +100,7 @@ def run_pipeline(
         rejected: list[dict[str, Any]] = []
         for cand in candidates:
             try:
-                result = jev_client.score_candidate(client, cand)
+                result = jev_client.score_candidate(client, cand, context=intent_context)
             except Exception:
                 result = {"jev_score": None, "adopted": False, "degraded": "internal_error"}
                 client.degraded = True
@@ -186,13 +196,20 @@ def run_pipeline(
     # 4. 拍板：jev_score × weight 降序 + 确定性抖动
     weights = memory.get("weights", {})
 
+    cuisine = constraints.get("cuisine_pref") if isinstance(constraints, dict) else None
+    if not isinstance(cuisine, str) or not cuisine.strip():
+        cuisine = None
+
     def rank(cand: dict[str, Any]) -> tuple[float, str]:
         score = (cand.get("image") or {}).get("jev_score")
         if not isinstance(score, (int, float)):
             score = cand.get("jev_score")
         base = float(score) if isinstance(score, (int, float)) else 0.0
         weight = memory_mod._to_float(weights.get(str(cand.get("name", "")), 1.0))
-        key = base * weight + _jitter(location, today, str(cand.get("name", "")))
+        text = " ".join(str(cand.get(k, "")) for k in ("name", "category", "description"))
+        hit = cuisine and cuisine.strip() in text
+        boost = CUISINE_BOOST if hit else 1.0
+        key = base * weight * boost + _jitter(location, today, str(cand.get("name", "")))
         return (-key, str(cand.get("name", "")))
 
     pool.sort(key=rank)

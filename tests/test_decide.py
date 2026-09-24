@@ -290,3 +290,62 @@ class JevFullFixtureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntentV2Tests(unittest.TestCase):
+    """反问轮 v2：意图进 jev 评分描述 + 菜系加权（spec #9）。"""
+
+    def test_intent_context_passed_to_jev(self):
+        # party/budget/location_anchor 合成意图上下文，附加在评分描述后
+        captured = []
+
+        def fake_score(state):
+            captured.append(state)
+            return {"ok": True, "score": 8.0, "degraded": False, "reason": None}
+
+        request = {
+            "location": LOCATION,
+            "constraints": {"party": "堂食 2 人", "budget": "人均 50", "cuisine_pref": "湘菜"},
+            "mode": "decide",
+        }
+        mem = {"eaten_log": [], "taboos": [], "weights": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            mem_path = Path(tmp) / "memory.json"
+            memory_mod.save_memory(mem_path, mem)
+            with mock.patch.object(
+                decide.collect_eats, "collect",
+                return_value={"ok": True, "candidates": fresh_candidates(),
+                              "notes": 3, "images": 4, "tool": "opencli"},
+            ), mock.patch.object(
+                decide.jev_client, "JevClient",
+                type("FakeJev2", (object,), {
+                    "limit": 20, "threshold": 7.0, "degraded": False, "reason": None,
+                    "calls_used": 0,
+                    "score": lambda self, state: fake_score(state),
+                    "__call__": lambda self: self,
+                })(),
+            ):
+                decide.run_pipeline(request, tmp, mem_path, today=TODAY)
+        self.assertTrue(captured)
+        for state in captured:
+            self.assertIn("用餐场景/意图", state)
+            self.assertIn("堂食 2 人", state)
+            self.assertIn("人均 50", state)
+
+    def test_cuisine_boost_ranks_matching_candidate_first(self):
+        # cuisine_pref 命中的候选 ×1.5 加权，反超更高基础分的候选
+        cands = fresh_candidates()
+        cands[0]["description"] = "胡辣汤"
+        cands[1]["description"] = "湘菜剁椒鱼头"
+        request = {
+            "location": LOCATION,
+            "constraints": {"cuisine_pref": "湘菜"},
+            "mode": "decide",
+        }
+        result, _ = run(cands, [9.1, 7.0, 6.0, 5.0], request=request)
+        self.assertEqual(result["verdict"]["pick"]["name"], cands[1]["name"])
+
+    def test_no_cuisine_pref_no_boost(self):
+        # 无 cuisine_pref → 行为等价无意图（最高分第一）
+        result, _ = run(fresh_candidates(), [8.7, 9.1, 6.2, 8.4])
+        self.assertEqual(result["verdict"]["pick"]["name"], "方中山胡辣汤")

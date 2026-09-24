@@ -214,7 +214,9 @@ class JevClient:
         return max(0.0, min(10.0, raw / 3.0 * 10.0))
 
 
-def score_candidate(client: JevClient, candidate: dict[str, Any]) -> dict[str, Any]:
+def score_candidate(
+    client: JevClient, candidate: dict[str, Any], context: str = ""
+) -> dict[str, Any]:
     """对单个候选评分（docs/SCHEMA.md 候选形状）。
 
     把 name/category/description/image.alt_description 拼成评分描述发给
@@ -232,6 +234,8 @@ def score_candidate(client: JevClient, candidate: dict[str, Any]) -> dict[str, A
         str(image.get("alt_description", "")),
     )
     state = " / ".join(part for part in parts if part)
+    if context:
+        state = "{}{}".format(state, context)
     result = client.score(state)
     if result["degraded"]:
         return {
