@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "command_failed",
+  "message": "(node:25308) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n(Use `node --trace-warnings ...` to show where the warning was created)\nok: false\nerror:\n  code: UNKNOWN\n  message: Navigation rejected.\n  exitCode: 1\n# AutoFix: re-run with --trace=retain-on-failure for trace artifact\n# opencli xiaohongshu note --trace retain-on-failure"
+}

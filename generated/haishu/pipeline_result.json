@@ -1,0 +1,207 @@
+{
+  "request": {
+    "location": "宁波海曙区",
+    "constraints": {
+      "taboos": [],
+      "budget": "",
+      "party": ""
+    },
+    "mode": "decide"
+  },
+  "candidates": [
+    {
+      "name": "蟹爸爸肉蟹煲",
+      "category": "肉蟹煲/浙菜",
+      "description": "博主吃了快10次的宝藏店，虾蟹煲性价比最高，可加金针菇莴笋娃娃菜，团购会员卡划算",
+      "image": {
+        "url": "images/haishu-xiebaba.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "蟹爸爸肉蟹煲招牌煲：蟹+虾+鸡爪浓汤，带店名标注",
+        "jev_score": 5.966666666666667,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+        "author": "出逃的干饭人",
+        "url": "https://www.xiaohongshu.com/search_result/6a5753c9000000000f00645d"
+      },
+      "jev_score": 5.966666666666667
+    },
+    {
+      "name": "囍阿婆地锅鸡",
+      "category": "地锅鸡/家常菜",
+      "description": "地锅鸡配锅边贴饼是灵魂，吸饱汤汁后口感绝佳，豆角娃娃菜入味",
+      "image": {
+        "url": "images/haishu-note4-cover.jpg",
+        "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+        "alt_description": "四店合集封面：右侧地锅鸡锅边贴饼特写",
+        "jev_score": 4.2,
+        "adopted": false
+      },
+      "note_source": {
+        "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+        "author": "出逃的干饭人"
+      },
+      "jev_score": 4.2
+    },
+    {
+      "name": "融铁牛螺蛳粉（城隍庙店）",
+      "category": "螺蛳粉/小吃",
+      "description": "螺蛳粉火锅套餐料量扎实性价比高，米粉免费续加，吃完可逛城隍庙天一广场",
+      "note_source": {
+        "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+        "author": "出逃的干饭人"
+      },
+      "jev_score": 4.8
+    },
+    {
+      "name": "老牌东北菜馆",
+      "category": "东北菜",
+      "description": "水煮肉片麻辣鲜香，地三鲜鱼香茄条下饭，饭点人多建议早到",
+      "note_source": {
+        "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+        "author": "出逃的干饭人"
+      },
+      "jev_score": 3.4000000000000004
+    },
+    {
+      "name": "马园路海鲜大排档",
+      "category": "海鲜/宁波本帮",
+      "description": "马园路254号，20年老店人均70，海肠捞饭/沙葱牛肉/咸菜鱿鱼/宁波汤圆，营业10:30-24:00，本地食客满座",
+      "note_source": {
+        "title": "宁波20年老店封神！人均70吃到撑",
+        "author": "Wendy"
+      },
+      "jev_score": 9.333333333333332
+    }
+  ],
+  "verdict": {
+    "pick": {
+      "name": "马园路海鲜大排档",
+      "category": "海鲜/宁波本帮",
+      "description": "马园路254号，20年老店人均70，海肠捞饭/沙葱牛肉/咸菜鱿鱼/宁波汤圆，营业10:30-24:00，本地食客满座"
+    },
+    "reason": "jev 评分最高（9.33333），且未在近期吃过记录中",
+    "alternates_hint": [],
+    "degraded": []
+  },
+  "memory": {
+    "eaten_log": [],
+    "taboos": [],
+    "weights": {}
+  },
+  "alerts": [
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「蟹爸爸肉蟹煲」素材 jev 5.96667 < 7 未达标，已从候选剔除",
+      "detail": "候选池 5 个，1 个达标；阈值 7，限次 20，实际调用 5 次。"
+    },
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「囍阿婆地锅鸡」素材 jev 4.2 < 7 未达标，已从候选剔除",
+      "detail": "候选池 5 个，1 个达标；阈值 7，限次 20，实际调用 5 次。"
+    },
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「融铁牛螺蛳粉（城隍庙店）」素材 jev None < 7 未达标，已从候选剔除",
+      "detail": "候选池 5 个，1 个达标；阈值 7，限次 20，实际调用 5 次。"
+    },
+    {
+      "source": "JEV",
+      "type": "素材筛选",
+      "level": "advisory",
+      "title": "「老牌东北菜馆」素材 jev None < 7 未达标，已从候选剔除",
+      "detail": "候选池 5 个，1 个达标；阈值 7，限次 20，实际调用 5 次。"
+    }
+  ],
+  "pipeline": {
+    "collect": {
+      "ok": true,
+      "candidates": [
+        {
+          "name": "蟹爸爸肉蟹煲",
+          "category": "肉蟹煲/浙菜",
+          "description": "博主吃了快10次的宝藏店，虾蟹煲性价比最高，可加金针菇莴笋娃娃菜，团购会员卡划算",
+          "image": {
+            "url": "images/haishu-xiebaba.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "蟹爸爸肉蟹煲招牌煲：蟹+虾+鸡爪浓汤，带店名标注",
+            "jev_score": 5.966666666666667,
+            "adopted": false
+          },
+          "note_source": {
+            "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+            "author": "出逃的干饭人",
+            "url": "https://www.xiaohongshu.com/search_result/6a5753c9000000000f00645d"
+          },
+          "jev_score": 5.966666666666667
+        },
+        {
+          "name": "囍阿婆地锅鸡",
+          "category": "地锅鸡/家常菜",
+          "description": "地锅鸡配锅边贴饼是灵魂，吸饱汤汁后口感绝佳，豆角娃娃菜入味",
+          "image": {
+            "url": "images/haishu-note4-cover.jpg",
+            "credibility": "untrusted · 小红书 UGC（OpenCLI 采集）",
+            "alt_description": "四店合集封面：右侧地锅鸡锅边贴饼特写",
+            "jev_score": 4.2,
+            "adopted": false
+          },
+          "note_source": {
+            "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+            "author": "出逃的干饭人"
+          },
+          "jev_score": 4.2
+        },
+        {
+          "name": "融铁牛螺蛳粉（城隍庙店）",
+          "category": "螺蛳粉/小吃",
+          "description": "螺蛳粉火锅套餐料量扎实性价比高，米粉免费续加，吃完可逛城隍庙天一广场",
+          "note_source": {
+            "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+            "author": "出逃的干饭人"
+          },
+          "jev_score": 4.8
+        },
+        {
+          "name": "老牌东北菜馆",
+          "category": "东北菜",
+          "description": "水煮肉片麻辣鲜香，地三鲜鱼香茄条下饭，饭点人多建议早到",
+          "note_source": {
+            "title": "宁波美食第1期｜吃了十几次的4家店铺合集",
+            "author": "出逃的干饭人"
+          },
+          "jev_score": 3.4000000000000004
+        },
+        {
+          "name": "马园路海鲜大排档",
+          "category": "海鲜/宁波本帮",
+          "description": "马园路254号，20年老店人均70，海肠捞饭/沙葱牛肉/咸菜鱿鱼/宁波汤圆，营业10:30-24:00，本地食客满座",
+          "note_source": {
+            "title": "宁波20年老店封神！人均70吃到撑",
+            "author": "Wendy"
+          },
+          "jev_score": 9.333333333333332
+        }
+      ],
+      "notes": 8,
+      "images": 2,
+      "tool": "opencli + 宿主 AI vision 提取"
+    },
+    "jev": {
+      "ok": true,
+      "calls": 5,
+      "limit": 20,
+      "threshold": 7.0,
+      "adopted": 1,
+      "degraded": false,
+      "reason": null
+    }
+  }
+}

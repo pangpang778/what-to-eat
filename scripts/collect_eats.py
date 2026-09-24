@@ -330,6 +330,7 @@ def _collect(
     timeout: int,
     failed: dict[str, Any],
 ) -> dict[str, Any]:
+    workdir.mkdir(parents=True, exist_ok=True)  # 根因修：工作目录由 collect 自建，调用方不用记得 mkdir
     notes, error = _search_notes(location, search_limit, timeout)
     if error is not None:
         failed["message"] = str(error.get("message") or error.get("error") or "search failed")

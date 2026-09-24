@@ -95,6 +95,9 @@ def run_pipeline(
                 result = {"jev_score": None, "adopted": False, "degraded": "internal_error"}
                 client.degraded = True
                 client.reason = client.reason or "internal_error"
+            # 无图候选的分数也要落地（review 修复：reason「jev 未参与评分」是事实错误）
+            if result.get("jev_score") is not None:
+                cand["jev_score"] = result["jev_score"]
             image = cand.get("image")
             if isinstance(image, dict):
                 if result.get("jev_score") is not None:
@@ -185,6 +188,8 @@ def run_pipeline(
 
     def rank(cand: dict[str, Any]) -> tuple[float, str]:
         score = (cand.get("image") or {}).get("jev_score")
+        if not isinstance(score, (int, float)):
+            score = cand.get("jev_score")
         base = float(score) if isinstance(score, (int, float)) else 0.0
         weight = memory_mod._to_float(weights.get(str(cand.get("name", "")), 1.0))
         key = base * weight + _jitter(location, today, str(cand.get("name", "")))
@@ -194,6 +199,8 @@ def run_pipeline(
     picked = pool[0]
     alternates = [str(c.get("name", "")) for c in pool[1:4]]
     picked_score = (picked.get("image") or {}).get("jev_score")
+    if not isinstance(picked_score, (int, float)):
+        picked_score = picked.get("jev_score")
     picked_weight = float(weights.get(str(picked.get("name", "")), 1.0))
     image = picked.get("image") if (picked.get("image") or {}).get("adopted") else None
 
@@ -309,6 +316,6 @@ def _jitter(location: str, today: date, name: str) -> float:
 
 def _fmt(value: Any) -> str:
     try:
-        return "{:g}".format(float(value))
+        return "{:.2f}".format(float(value))
     except (TypeError, ValueError):
         return str(value)
