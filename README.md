@@ -7,13 +7,13 @@
 把下面这句话交给 Claude Code、Codex 或其他能操作本机文件的 AI：
 
 ~~~
-请安装并配置这个 GitHub skill：https://github.com/pangpang778/what-to-eat；自动识别当前 AI 宿主并安装到正确的 skills 目录，检查并安装 OpenCLI，检查小红书登录状态，JEV_API_KEY 有就启用、没有就降级，然后用 /what-to-eat 宁波海曙区附近找个吃的 跑一次真实验收，只有需要我登录或提供 key 时才停下来告诉我具体动作。
+请安装并配置这个 GitHub skill：https://github.com/pangpang778/what-to-eat；自动识别当前 AI 宿主并安装到正确的 skills 目录，检查并安装 OpenCLI，检查小红书登录状态，JEV_API_KEY 有就启用、没有就降级，然后用 /what-to-eat 杭州滨江区附近找个吃的 跑一次真实验收，只有需要我登录或提供 key 时才停下来告诉我具体动作。
 ~~~
 
 安装完成后，使用下面的触发方式：
 
 ~~~
-/what-to-eat 宁波海曙区附近找个吃的
+/what-to-eat 杭州滨江区附近找个吃的
 ~~~
 
 也可以直接说：
