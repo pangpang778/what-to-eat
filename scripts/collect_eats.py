@@ -26,6 +26,7 @@ from typing import Any
 
 DEFAULT_TIMEOUT = 120
 IMAGE_TIMEOUT = 30
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 TOOL = "opencli"
 DEGRADED = "collect_failed"
 CREDIBILITY = "untrusted · 小红书 UGC（OpenCLI 采集）"
@@ -61,6 +62,7 @@ CATEGORY_KEYWORDS: tuple[tuple[str, str], ...] = (
 )
 
 _QUOTE_RE = re.compile(r"[「【]([^「」【】]{2,20})[」】]")
+_STORE_RE = re.compile(r"(?:^|[\s。；;])([^\s：:，,。；;]{2,24})[：:]")
 
 
 def _resolve_command(name: str) -> str | None:
@@ -163,7 +165,11 @@ def _records(data: Any, *keys: str) -> list[dict[str, Any]]:
     return []
 
 
-def search_keywords(location: str, constraints: dict[str, Any] | None = None) -> list[str]:
+def search_keywords(
+    location: str,
+    constraints: dict[str, Any] | None = None,
+    direction: str | None = None,
+) -> list[str]:
     """反问轮 v2：意图合成搜索词（docs/SCHEMA.md 反问轮 v2 契约）。
 
     位置锚点/场景（外卖、一人食）/预算 → 附加词；no_preference 维度不进搜索词。
@@ -181,6 +187,8 @@ def search_keywords(location: str, constraints: dict[str, Any] | None = None) ->
     budget = cons.get("budget")
     if isinstance(budget, str) and budget.strip():
         extras.append(budget.strip())
+    if direction and direction.strip():
+        extras.insert(0, direction.strip())
     if extras:
         head = "{} {}".format(head, " ".join(extras))
     return ["{} {}".format(head, suffix) for suffix in SEARCH_SUFFIXES]
@@ -293,9 +301,20 @@ def _download(url: str, dest: Path, timeout: int = IMAGE_TIMEOUT) -> bool:
                 return False
         request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(request, timeout=timeout) as response, open(dest, "wb") as handle:
-            handle.write(response.read())
+            length = response.headers.get("Content-Length")
+            if length and int(length) > MAX_IMAGE_BYTES:
+                dest.unlink(missing_ok=True)
+                return False
+            total = 0
+            while chunk := response.read(64 * 1024):
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    dest.unlink(missing_ok=True)
+                    return False
+                handle.write(chunk)
         return True
-    except (OSError, ValueError, http.client.HTTPException):
+    except (OSError, ValueError, TypeError, http.client.HTTPException):
+        dest.unlink(missing_ok=True)
         return False
 
 
@@ -304,6 +323,143 @@ def _category(text: str) -> str:
         if keyword in text:
             return category
     return "美食"
+
+
+def _store_names(note: dict[str, Any], text: str) -> list[str]:
+    names: list[str] = []
+    for raw in _STORE_RE.findall(text):
+        name = re.sub(r"^[^\w\u4e00-\u9fff]+|[^\w\u4e00-\u9fff]+$", "", raw)
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        title = str(note.get("title") or note.get("name") or "").strip()
+        if title and not any(token in title for token in ("攻略", "盘点", "合集")):
+            names.append(title)
+    return names
+
+
+def _direction_from_note(note: dict[str, Any]) -> str:
+    title = str(note.get("title") or note.get("name") or "").strip()
+    category = _category(title)
+    if category != "美食":
+        return category
+    return ""
+
+
+def discover_directions(
+    location: str,
+    search_limit: int = 8,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+    """First Xiaohongshu pass: find eating directions before concrete stores."""
+    keywords = [
+        "{} 美食攻略".format(str(location).strip()),
+        "{} 必吃".format(str(location).strip()),
+    ]
+    notes, error = _search_notes(location, search_limit, timeout, keywords)
+    if error is not None:
+        return {
+            "ok": False,
+            "directions": [],
+            "notes": 0,
+            "degraded": DEGRADED,
+            "message": str(error.get("message") or error.get("error") or "direction search failed"),
+        }
+    directions: list[str] = []
+    for note in notes:
+        direction = _direction_from_note(note)
+        if not direction:
+            url = str(note.get("url") or note.get("link") or "")
+            if url:
+                detail = _read_note(url, timeout)
+                if detail.get("ok"):
+                    body, _, _ = _detail_fields(detail.get("data"))
+                    direction = _category(body)
+        if direction == "美食":
+            continue
+        if direction and direction not in directions:
+            directions.append(direction)
+        if len(directions) == 3:
+            break
+    if not directions:
+        return {"ok": False, "directions": [], "notes": len(notes), "degraded": DEGRADED}
+    return {"ok": True, "directions": directions, "notes": len(notes)}
+
+
+def collect_two_stage(
+    location: str,
+    workdir: str | Path,
+    search_limit: int = 8,
+    timeout: int = DEFAULT_TIMEOUT,
+    constraints: dict[str, Any] | None = None,
+    directions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Discover directions, then research concrete stores for each direction."""
+    failed = {
+        "ok": False,
+        "candidates": [],
+        "directions": [],
+        "notes": 0,
+        "images": 0,
+        "tool": TOOL,
+        "degraded": DEGRADED,
+    }
+    location = str(location or "").strip()
+    if not location:
+        failed["message"] = "location is empty"
+        return failed
+    direction_result = (
+        {"ok": True, "directions": directions[:3], "notes": 0}
+        if directions else discover_directions(location, search_limit, timeout)
+    )
+    failed["directions"] = direction_result.get("directions", [])
+    failed["notes"] = direction_result.get("notes", 0)
+    if not direction_result.get("ok"):
+        failed["message"] = direction_result.get("message", "direction search failed")
+        return failed
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    images = 0
+    notes = int(direction_result.get("notes", 0))
+    for index, direction in enumerate(direction_result["directions"], start=1):
+        result = collect(
+            location,
+            Path(workdir) / "directions" / str(index),
+            search_limit=search_limit,
+            timeout=timeout,
+            constraints=constraints,
+            direction=direction,
+            stores_only=True,
+        )
+        if not result.get("ok"):
+            continue
+        notes += int(result.get("notes", 0))
+        images += int(result.get("images", 0))
+        for candidate in result.get("candidates", []):
+            if len(candidates) >= 3:
+                continue
+            name = str(candidate.get("name", "")).strip()
+            key = " ".join(name.split()).casefold()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            candidate = dict(candidate)
+            candidate["direction"] = direction
+            candidates.append(candidate)
+    if not candidates:
+        failed["notes"] = notes
+        failed["images"] = images
+        failed["message"] = "no stores extracted from discovered directions"
+        return failed
+    return {
+        "ok": True,
+        "candidates": candidates,
+        "directions": direction_result["directions"],
+        "notes": notes,
+        "images": images,
+        "tool": TOOL,
+    }
 
 
 # ponytail: 每篇笔记只本地化首图（候选 image 是单图槽）；需要图集时扩成多图
@@ -340,6 +496,8 @@ def collect(
     search_limit: int = 8,
     timeout: int = DEFAULT_TIMEOUT,
     constraints: dict[str, Any] | None = None,
+    direction: str | None = None,
+    stores_only: bool = False,
 ) -> dict[str, Any]:
     """采集小红书美食笔记，产出拍板 schema 的候选素材。
 
@@ -361,7 +519,9 @@ def collect(
         failed["message"] = "location is empty"
         return failed
     try:
-        return _collect(str(location), Path(workdir), search_limit, timeout, failed, constraints)
+        return _collect(
+            str(location), Path(workdir), search_limit, timeout, failed, constraints, direction, stores_only
+        )
     except Exception as exc:  # 兜底：产物永不失败
         failed["message"] = "unexpected: {}".format(exc)
         return failed
@@ -374,9 +534,11 @@ def _collect(
     timeout: int,
     failed: dict[str, Any],
     constraints: dict[str, Any] | None = None,
+    direction: str | None = None,
+    stores_only: bool = False,
 ) -> dict[str, Any]:
     workdir.mkdir(parents=True, exist_ok=True)  # 根因修：工作目录由 collect 自建，调用方不用记得 mkdir
-    keywords = search_keywords(location, constraints)
+    keywords = search_keywords(location, constraints, direction)
     notes, error = _search_notes(location, search_limit, timeout, keywords)
     if error is not None:
         failed["message"] = str(error.get("message") or error.get("error") or "search failed")
@@ -404,11 +566,12 @@ def _collect(
             note_source["url"] = url
 
         text = text.strip()
-        names = [title] if title else []
-        for match in _QUOTE_RE.findall(text):
-            name = match.strip()
-            if name and name not in names:
-                names.append(name)
+        names = _store_names(note, text) if stores_only else ([title] if title else [])
+        if not stores_only:
+            for match in _QUOTE_RE.findall(text):
+                name = match.strip()
+                if name and name not in names:
+                    names.append(name)
 
         description = (text.splitlines() or [""])[0][:120] if text else title
         if engagement:

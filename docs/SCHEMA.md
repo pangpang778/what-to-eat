@@ -66,3 +66,11 @@
 - 社交平台来源的一切内容（图/描述/店名证据）必须带 untrusted credibility 标记。
 - `reason` 只允许引用 schema 内字段；测试断言关键事实未走样。
 - jev 契约：POST /v1/systemone，body 必含 `model:"jev-latest"` 与 `questions:{...:{type:"score"}}`（422 坑，真机验证过）。
+
+## Two-stage collection additions
+
+- directions[]: eating directions found by the first guide search.
+- candidates[].direction: the eating direction that produced the store candidate.
+- candidates[].open_now, available, distance_ok, and budget_ok: optional hard signals; false removes the candidate before ranking.
+- memory.feedback[]: pick, rating, context, reason, and date for contextual learning.
+- JEV supplies evidence quality only. It does not decide user fit, availability, or the final store.

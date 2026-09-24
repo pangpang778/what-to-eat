@@ -64,7 +64,9 @@ def run_pipeline(
 
     # 1. 采集（collect 自身承诺不抛；双保险）
     try:
-        collected = collect_eats.collect(location, workdir, constraints=constraints)
+        collected = collect_eats.collect_two_stage(
+            location, workdir, constraints=constraints
+        )
     except Exception as exc:
         collected = {
             "ok": False,
@@ -143,7 +145,8 @@ def run_pipeline(
                 # 全拒 → 启发式孪生从全量候选里按规则挑（低分素材不入 verdict）
                 all_rejected = True
                 degraded.append("all_candidates_rejected: 启发式孪生")
-                pool = list(candidates)
+            # JEV 是证据质量信号；低分店仍可因当前匹配度进入比较。
+            pool = list(candidates)
     else:
         degraded.append("jev_disabled: 宿主 AI 复核")
         pool = list(candidates)
@@ -155,6 +158,22 @@ def run_pipeline(
         summary = jev_client.jev_summary(jev_client.JevClient(), 0, enabled=False)
 
     # 3. 记忆过滤（忌口硬过滤含 request.constraints.taboos / 近 3 天 / 低权重）
+    pool, feasibility_note = _filter_feasibility(pool)
+    if feasibility_note:
+        alerts.append({
+            "source": "RULE",
+            "type": "可执行性过滤",
+            "level": ADVISORY,
+            "title": "不可执行的店铺已移除",
+            "detail": feasibility_note,
+        })
+    if not pool:
+        return _fallback(
+            request, collected, "feasibility_filtered_all: 启发式孪生",
+            degraded, alerts, summary=summary,
+            today=today, location=location, memory_path=memory_path,
+        )
+
     memory = memory_mod.load_memory(memory_path)
     effective = dict(memory)
     request_taboos = [
@@ -196,29 +215,44 @@ def run_pipeline(
     # 4. 拍板：jev_score × weight 降序 + 确定性抖动
     weights = memory.get("weights", {})
 
-    cuisine = constraints.get("cuisine_pref") if isinstance(constraints, dict) else None
-    if not isinstance(cuisine, str) or not cuisine.strip():
-        cuisine = None
-
     def rank(cand: dict[str, Any]) -> tuple[float, str]:
         score = (cand.get("image") or {}).get("jev_score")
         if not isinstance(score, (int, float)):
             score = cand.get("jev_score")
-        base = float(score) if isinstance(score, (int, float)) else 0.0
+        evidence = float(score) if isinstance(score, (int, float)) else 5.0
+        fit = _fit_score(cand, constraints)
+        convenience = _convenience_score(cand)
         weight = memory_mod._to_float(weights.get(str(cand.get("name", "")), 1.0))
-        text = " ".join(str(cand.get(k, "")) for k in ("name", "category", "description"))
-        hit = cuisine and cuisine.strip() in text
-        boost = CUISINE_BOOST if hit else 1.0
-        key = base * weight * boost + _jitter(location, today, str(cand.get("name", "")))
+        feedback = memory_mod.contextual_adjustment(
+            memory,
+            str(cand.get("name", "")),
+            {
+                key: value
+                for key, value in {
+                    "direction": cand.get("direction"),
+                    "craving": constraints.get("craving"),
+                    "meal_mode": constraints.get("meal_mode"),
+                }.items()
+                if value
+            },
+        )
+        key = (
+            fit * 0.55
+            + evidence * 0.25
+            + convenience * 0.20
+            + feedback
+        ) * weight + _jitter(location, today, str(cand.get("name", "")))
         return (-key, str(cand.get("name", "")))
 
     pool.sort(key=rank)
     picked = pool[0]
-    alternates = [str(c.get("name", "")) for c in pool[1:4]]
+    alternates = [str(c.get("name", "")) for c in pool[1:3]]
     picked_score = (picked.get("image") or {}).get("jev_score")
     if not isinstance(picked_score, (int, float)):
         picked_score = picked.get("jev_score")
-    picked_weight = float(weights.get(str(picked.get("name", "")), 1.0))
+    picked_weight = memory_mod._to_float(
+        weights.get(str(picked.get("name", "")), 1.0)
+    )
     image = picked.get("image") if (picked.get("image") or {}).get("adopted") else None
 
     verdict: dict[str, Any] = {
@@ -227,8 +261,11 @@ def run_pipeline(
             for key in ("name", "category", "description")
             if picked.get(key)
         },
-        "reason": _reason(
-            picked_score, picked_weight, all_rejected, prev_pick
+        "reason": _reason(picked_score, picked_weight, all_rejected, prev_pick)
+        + " 当前匹配度 {:.1f}，证据质量 {:.1f}，方便程度 {:.1f}。".format(
+            _fit_score(picked, constraints),
+            float(picked_score) if isinstance(picked_score, (int, float)) else 5.0,
+            _convenience_score(picked),
         ),
         "alternates_hint": alternates,
         "degraded": degraded,
@@ -241,6 +278,7 @@ def run_pipeline(
     # 6. 拍板自动记录
     try:
         memory_mod.record_verdict(memory_path, location, verdict, today)
+        memory = memory_mod.load_memory(memory_path)
     except Exception:
         degraded.append("memory_write_failed: 拍板记录失败")
 
@@ -252,6 +290,51 @@ def run_pipeline(
         "alerts": alerts,
         "pipeline": {"collect": collected, "jev": summary},
     }
+
+
+def _filter_feasibility(
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    kept: list[dict[str, Any]] = []
+    removed: list[str] = []
+    for candidate in candidates:
+        invalid = any(
+            candidate.get(key) is False
+            for key in ("open_now", "available", "distance_ok", "budget_ok")
+        )
+        if invalid:
+            removed.append(str(candidate.get("name", "")))
+        else:
+            kept.append(candidate)
+    return kept, "不可执行: " + "、".join(removed) if removed else ""
+
+
+def _fit_score(candidate: dict[str, Any], constraints: dict[str, Any]) -> float:
+    text = " ".join(
+        str(candidate.get(key, ""))
+        for key in ("name", "category", "description", "direction")
+    ).casefold()
+    signals = [
+        constraints.get("cuisine_pref"),
+        constraints.get("craving"),
+        constraints.get("meal_mode"),
+    ]
+    hits = sum(
+        1
+        for signal in signals
+        if isinstance(signal, str) and signal.strip().casefold() in text
+    )
+    return min(10.0, 5.0 + hits * CUISINE_BOOST)
+
+
+def _convenience_score(candidate: dict[str, Any]) -> float:
+    score = 5.0
+    if candidate.get("open_now") is True:
+        score += 2.0
+    distance = candidate.get("distance_km")
+    if isinstance(distance, (int, float)):
+        score += max(-5.0, 3.0 - float(distance))
+    return max(0.0, min(10.0, score))
 
 
 def _fallback(
@@ -295,6 +378,7 @@ def _fallback(
     memory = memory_mod.load_memory(memory_path)
     try:
         memory_mod.record_verdict(memory_path, location, verdict, today)
+        memory = memory_mod.load_memory(memory_path)
     except Exception:
         verdict["degraded"].append("memory_write_failed: 拍板记录失败")
     return {

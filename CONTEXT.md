@@ -37,3 +37,12 @@ jev 或采集不可用时的退路：退回宿主 AI 自行评估/建议，降�
 ## 反问轮（Clarify Round）
 
 grill-me 式的需求澄清：零输入时反问缺失的关键项（地点/忌口/预算/人数，≤4 问），用户答完必须拍板。反问是为了拍得更准，不是把决策推回给用户。
+
+## Two-stage decision glossary
+
+- Decision state: tonight's craving, mood, energy, location, meal mode, party, budget, and taboos.
+- Eating direction: a category found in the first Xiaohongshu guide search.
+- Store candidate: a concrete store found by the second search under an eating direction.
+- Evidence: source title, author, URL, date, and note content; social content remains untrusted.
+- Final decision: one executable store selected from the remaining candidates.
+- Feedback: meal result and reason tags attached to the matching decision state.

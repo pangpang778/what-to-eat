@@ -227,3 +227,40 @@ class SearchKeywordsV2Tests(unittest.TestCase):
             collect_eats.collect("宁波", Path("build/test-constraints"), constraints={"party": "堂食 2 人"})
             called = spy.call_args
         self.assertEqual(called.args[1], {"party": "堂食 2 人"})
+
+
+class TwoStageCollectionTests(unittest.TestCase):
+    def test_store_names_come_from_note_content_not_guide_title(self):
+        note = {"title": "宁波美食攻略：四家店", "author": "本地人", "url": "https://example.com/n"}
+        detail = {"content": "🦀蟹爸爸肉蟹煲：鸡爪入味 🍜融铁牛螺蛳粉：可以续粉"}
+        with mock.patch.object(collect_eats, "_search_notes", return_value=([note], None)), mock.patch.object(
+            collect_eats, "_read_note", return_value={"ok": True, "data": detail}
+        ):
+            result = collect_eats.collect("宁波", "build/store-extraction", direction="夜宵", stores_only=True)
+        self.assertEqual([item["name"] for item in result["candidates"]], ["蟹爸爸肉蟹煲", "融铁牛螺蛳粉"])
+        self.assertNotIn(note["title"], [item["name"] for item in result["candidates"]])
+
+    def test_collect_two_stage_discovers_directions_then_caps_stores(self):
+        store_a = {"name": "店 A", "category": "湘菜", "description": "酸辣"}
+        store_b = {"name": "店 B", "category": "烧烤", "description": "炭火"}
+        store_c = {"name": "店 C", "category": "面食", "description": "热汤"}
+        with mock.patch.object(
+            collect_eats,
+            "discover_directions",
+            return_value={"ok": True, "directions": ["湘菜", "烧烤"]},
+        ), mock.patch.object(
+            collect_eats,
+            "collect",
+            side_effect=[
+                {"ok": True, "candidates": [store_a, store_b], "notes": 2, "images": 0, "tool": "opencli"},
+                {"ok": True, "candidates": [store_b, store_c], "notes": 2, "images": 0, "tool": "opencli"},
+            ],
+        ) as collect_mock:
+            result = collect_eats.collect_two_stage("郑州", "build/two-stage")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["directions"], ["湘菜", "烧烤"])
+        self.assertEqual([c["name"] for c in result["candidates"]], ["店 A", "店 B", "店 C"])
+        self.assertLessEqual(len(result["candidates"]), 3)
+        self.assertEqual(collect_mock.call_count, 2)
+        self.assertEqual(collect_mock.call_args_list[0].kwargs["direction"], "湘菜")

@@ -192,3 +192,29 @@ class RecordAndRatingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContextualFeedbackTests(unittest.TestCase):
+    def test_feedback_keeps_context_and_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "memory.json"
+            memory.record_feedback(
+                path,
+                "烧烤店",
+                "up",
+                context={"direction": "烧烤", "meal_mode": "堂食"},
+                reason="味道合适",
+            )
+            loaded = memory.load_memory(path)
+        self.assertEqual(loaded["feedback"][0]["pick"], "烧烤店")
+        self.assertEqual(loaded["feedback"][0]["context"]["direction"], "烧烤")
+        self.assertEqual(loaded["feedback"][0]["reason"], "味道合适")
+
+    def test_contextual_adjustment_only_matches_context(self):
+        mem = _mem_with()
+        mem["feedback"] = [
+            {"pick": "烧烤店", "rating": "up", "context": {"direction": "烧烤"}},
+            {"pick": "烧烤店", "rating": "down", "context": {"direction": "面食"}},
+        ]
+        self.assertGreater(memory.contextual_adjustment(mem, "烧烤店", {"direction": "烧烤"}), 0)
+        self.assertLess(memory.contextual_adjustment(mem, "烧烤店", {"direction": "面食"}), 0)

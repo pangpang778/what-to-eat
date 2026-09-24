@@ -71,7 +71,7 @@ def run(cands, scores, memory=None, request=None, enabled=True):
         mem_path = Path(tmp) / "memory.json"
         memory_mod.save_memory(mem_path, mem)
         with mock.patch.object(
-            decide.collect_eats, "collect",
+            decide.collect_eats, "collect_two_stage",
             return_value={"ok": True, "candidates": cands, "notes": 3, "images": 4,
                           "tool": "opencli"},
         ), mock.patch.object(
@@ -152,7 +152,7 @@ class CollectFailedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             mem_path = Path(tmp) / "memory.json"
             with mock.patch.object(
-                decide.collect_eats, "collect",
+                decide.collect_eats, "collect_two_stage",
                 return_value={"ok": False, "candidates": [], "notes": 0,
                               "images": 0, "tool": "opencli",
                               "degraded": "collect_failed"},
@@ -230,6 +230,8 @@ class MemoryLinkTests(unittest.TestCase):
                            "date": TODAY.isoformat()},
                           {"location": LOCATION, "pick": "方中山胡辣汤",
                            "date": TODAY.isoformat()},
+                          {"location": LOCATION, "pick": "京都老蔡记",
+                           "date": TODAY.isoformat()},
                           {"location": LOCATION, "pick": "合记烩面",
                            "date": TODAY.isoformat()}],
             "taboos": [], "weights": {},
@@ -292,6 +294,36 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class NewDecisionBehaviorTests(unittest.TestCase):
+    def test_result_memory_includes_new_pick(self):
+        result, _ = run(fresh_candidates(), [8.7, 9.1, 6.2, 8.4])
+        self.assertIn(
+            result["verdict"]["pick"]["name"],
+            [entry["pick"] for entry in result["memory"]["eaten_log"]],
+        )
+
+    def test_current_direction_beats_higher_evidence(self):
+        cands = fresh_candidates()
+        cands[0]["direction"] = "烧烤"
+        cands[0]["description"] = "烧烤"
+        cands[1]["direction"] = "湘菜"
+        cands[1]["description"] = "湘菜"
+        request = {
+            "location": LOCATION,
+            "constraints": {"cuisine_pref": "湘菜"},
+            "mode": "decide",
+        }
+        result, _ = run(cands, [9.8, 8.0, 7.0, 6.0], request=request)
+        self.assertEqual(result["verdict"]["pick"]["name"], cands[1]["name"])
+
+    def test_closed_candidate_is_removed_before_ranking(self):
+        cands = fresh_candidates()
+        cands[0]["open_now"] = False
+        result, _ = run(cands, [9.8, 8.0, 7.0, 6.0])
+        self.assertNotEqual(result["verdict"]["pick"]["name"], cands[0]["name"])
+        self.assertTrue(any(a["source"] == "RULE" for a in result["alerts"]))
+
+
 class IntentV2Tests(unittest.TestCase):
     """反问轮 v2：意图进 jev 评分描述 + 菜系加权（spec #9）。"""
 
@@ -313,7 +345,7 @@ class IntentV2Tests(unittest.TestCase):
             mem_path = Path(tmp) / "memory.json"
             memory_mod.save_memory(mem_path, mem)
             with mock.patch.object(
-                decide.collect_eats, "collect",
+                decide.collect_eats, "collect_two_stage",
                 return_value={"ok": True, "candidates": fresh_candidates(),
                               "notes": 3, "images": 4, "tool": "opencli"},
             ), mock.patch.object(

@@ -50,6 +50,8 @@ def load_memory(path: str | Path) -> dict[str, Any]:
         memory["taboos"] = data["taboos"]
     if isinstance(data.get("weights"), dict):
         memory["weights"] = data["weights"]
+    if isinstance(data.get("feedback"), list):
+        memory["feedback"] = data["feedback"]
     return memory
 
 
@@ -160,6 +162,47 @@ def apply_rating(
         entry["rating"] = rating
         break
     save_memory(path, memory)
+
+
+def record_feedback(
+    path: str | Path,
+    pick: str,
+    rating: str,
+    context: dict[str, Any] | None = None,
+    reason: str | None = None,
+    today: date | None = None,
+) -> None:
+    """Store a meal result with the situation that produced it."""
+    if rating not in ("up", "down", "neutral"):
+        raise ValueError("rating must be up/down/neutral")
+    memory = load_memory(path)
+    memory.setdefault("feedback", []).append({
+        "pick": str(pick),
+        "rating": rating,
+        "context": dict(context or {}),
+        "reason": str(reason or ""),
+        "date": (today or date.today()).isoformat(),
+    })
+    save_memory(path, memory)
+
+
+def contextual_adjustment(
+    memory: dict[str, Any], pick: str, context: dict[str, Any] | None = None
+) -> float:
+    """Return a small adjustment from feedback with matching context only."""
+    target = context or {}
+    adjustment = 0.0
+    for entry in memory.get("feedback", []):
+        if entry.get("pick") != pick:
+            continue
+        observed = entry.get("context")
+        if not isinstance(observed, dict) or any(
+            target.get(key) != value for key, value in observed.items()
+        ):
+            continue
+        rating = entry.get("rating")
+        adjustment += {"up": 0.5, "down": -0.8, "neutral": 0.0}.get(rating, 0.0)
+    return adjustment
 
 
 def _parse_date(value: Any) -> date | None:
