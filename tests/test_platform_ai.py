@@ -54,6 +54,80 @@ class PlatformAiTests(unittest.TestCase):
         self.assertEqual(result["reason"], "unsupported_platform")
         run.assert_not_called()
 
+    def test_verifies_all_citations_and_keeps_independent_sources(self):
+        lead = {
+            "platform": "xiaohongshu",
+            "store_candidates": ["宁海食府"],
+            "sources": [
+                {
+                    "title": "宁海食府探店",
+                    "author": "甲",
+                    "url": "https://www.xiaohongshu.com/explore/a1",
+                    "date": "2026-09-20",
+                    "verifiable": True,
+                },
+                {
+                    "title": "宁海食府实测",
+                    "author": "乙",
+                    "url": "https://www.xiaohongshu.com/explore/a2",
+                    "date": "2026-09-18",
+                    "verifiable": True,
+                },
+            ],
+            "answer": "推荐宁海食府",
+            "untrusted": True,
+        }
+        with mock.patch.object(
+            collect_eats,
+            "_read_note",
+            side_effect=[
+                {"ok": True, "data": {"desc": "招牌海鲜，晚上营业"}},
+                {"ok": True, "data": {"content": "人均适中，排队较少"}},
+            ],
+        ) as read:
+            result = collect_eats.verify_platform_lead(lead)
+
+        self.assertTrue(result["ok"])
+        verified = result["lead"]["sources"]
+        self.assertEqual(len(verified), 2)
+        self.assertEqual([source["url"] for source in verified], [
+            "https://www.xiaohongshu.com/explore/a1",
+            "https://www.xiaohongshu.com/explore/a2",
+        ])
+        self.assertEqual(verified[0]["content"], "招牌海鲜，晚上营业")
+        self.assertEqual(verified[1]["content"], "人均适中，排队较少")
+        self.assertTrue(all(source["verified"] for source in verified))
+        self.assertTrue(result["lead"]["untrusted"])
+        self.assertEqual(read.call_count, 2)
+
+    def test_invalid_and_unavailable_citations_are_degraded_evidence(self):
+        lead = {
+            "platform": "xiaohongshu",
+            "store_candidates": ["某店"],
+            "sources": [
+                {"title": "无链接来源", "author": "甲", "url": None, "date": None, "verifiable": False},
+                {"title": "失效笔记", "author": "乙", "url": "https://example.com/missing", "date": "2026-09-01", "verifiable": True},
+            ],
+            "answer": "某店",
+            "untrusted": True,
+        }
+        with mock.patch.object(
+            collect_eats,
+            "_read_note",
+            return_value={"ok": False, "error": "timeout", "message": "timed out"},
+        ) as read:
+            result = collect_eats.verify_platform_lead(lead)
+
+        self.assertTrue(result["ok"])
+        sources = result["lead"]["sources"]
+        self.assertFalse(sources[0]["verified"])
+        self.assertEqual(sources[0]["degraded"], "invalid_citation")
+        self.assertFalse(sources[1]["verified"])
+        self.assertEqual(sources[1]["degraded"], "source_unavailable")
+        self.assertEqual(result["lead"]["degraded"], "platform_source_verification")
+        self.assertEqual(result["summary"], {"total": 2, "verified": 0, "degraded": 2})
+        read.assert_called_once_with("https://example.com/missing", collect_eats.DEFAULT_TIMEOUT)
+
 
 if __name__ == "__main__":
     unittest.main()

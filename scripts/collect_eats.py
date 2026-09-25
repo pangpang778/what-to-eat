@@ -213,6 +213,59 @@ def _platform_lead(data: Any, platform: str) -> dict[str, Any]:
     }
 
 
+def verify_platform_lead(
+    lead: dict[str, Any],
+    timeout: int = DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+    """Re-read every cited note and attach evidence without trusting the summary.
+
+    Citation rows stay one-to-one with the platform response. This deliberately
+    keeps independent notes even when they mention the same store; later store
+    dedupe can use the complete evidence list instead of discarding corroboration.
+    """
+    verified_lead = dict(lead) if isinstance(lead, dict) else {}
+    raw_sources = verified_lead.get("sources")
+    sources = raw_sources if isinstance(raw_sources, list) else []
+    checked: list[dict[str, Any]] = []
+    verified_count = 0
+    degraded_count = 0
+    for raw in sources:
+        source = dict(raw) if isinstance(raw, dict) else {"url": str(raw or "")}
+        url = str(source.get("url") or "").strip()
+        source["content"] = ""
+        source["verified"] = False
+        if not url or urlparse(url).scheme not in {"http", "https"}:
+            source["degraded"] = "invalid_citation"
+            degraded_count += 1
+            checked.append(source)
+            continue
+        result = _read_note(url, timeout)
+        if result.get("ok") and result.get("data") is not None:
+            content, _, _ = _detail_fields(result.get("data"))
+            source["content"] = content
+            source["verified"] = bool(content)
+            if source["verified"]:
+                verified_count += 1
+            else:
+                source["degraded"] = "source_empty"
+                degraded_count += 1
+        else:
+            source["degraded"] = "source_unavailable"
+            source["error"] = str(result.get("error") or result.get("message") or "source_unavailable")[:200]
+            degraded_count += 1
+        checked.append(source)
+    verified_lead["sources"] = checked
+    if degraded_count:
+        verified_lead["degraded"] = "platform_source_verification"
+    else:
+        verified_lead.pop("degraded", None)
+    return {
+        "ok": True,
+        "lead": verified_lead,
+        "summary": {"total": len(checked), "verified": verified_count, "degraded": degraded_count},
+    }
+
+
 def ask_platform_ai(
     query: str,
     platform: str = "xiaohongshu",
