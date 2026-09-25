@@ -29,6 +29,7 @@ IMAGE_TIMEOUT = 30
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 TOOL = "opencli"
 DEGRADED = "collect_failed"
+PLATFORM_AI_DEGRADED = "platform_ai_failed"
 CREDIBILITY = "untrusted · 小红书 UGC（OpenCLI 采集）"
 
 # 双关键词搜索策略（CONTEXT.md「采集」）：两词都搜，结果按 url 去重合并
@@ -163,6 +164,93 @@ def _records(data: Any, *keys: str) -> list[dict[str, Any]]:
             if isinstance(value, list):
                 return [item for item in value if isinstance(item, dict)]
     return []
+
+
+def _platform_sources(data: Any) -> list[dict[str, Any]]:
+    """Normalize OpenCLI citation rows without trusting the answer text."""
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("sources")
+    if not isinstance(raw, list):
+        return []
+    sources: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, str):
+            item = {"url": item}
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or item.get("link") or "").strip()
+        sources.append({
+            "title": str(item.get("title") or item.get("name") or "").strip(),
+            "author": str(item.get("author") or "").strip(),
+            "url": url or None,
+            "date": str(item.get("date") or item.get("published_at") or "").strip() or None,
+            "verifiable": bool(url),
+        })
+    return sources
+
+
+def _platform_lead(data: Any, platform: str) -> dict[str, Any]:
+    """Turn one platform AI response into the stable, untrusted lead shape."""
+    payload = data if isinstance(data, dict) else {}
+    answer = str(payload.get("answer") or payload.get("text") or payload.get("content") or "").strip()
+    sources = _platform_sources(payload)
+    direction = _category(answer)
+    names = _store_names({"title": ""}, answer)
+    for source in sources:
+        title = str(source.get("title") or "").strip()
+        if not title or any(token in title for token in ("攻略", "盘点", "合集", "无链接")):
+            continue
+        if title not in names:
+            names.append(title)
+    return {
+        "platform": platform,
+        "direction": "" if direction == "美食" else direction,
+        "store_candidates": names[:5],
+        "sources": sources,
+        "answer": answer,
+        "untrusted": True,
+    }
+
+
+def ask_platform_ai(
+    query: str,
+    platform: str = "xiaohongshu",
+    timeout: int = DEFAULT_TIMEOUT,
+    source_limit: int = 10,
+) -> dict[str, Any]:
+    """Call a platform's read-only AI search and return a normalized lead."""
+    query = str(query or "").strip()
+    if not query:
+        return {"ok": False, "platform": platform, "degraded": PLATFORM_AI_DEGRADED, "reason": "empty_query"}
+    if platform != "xiaohongshu":
+        return {"ok": False, "platform": platform, "degraded": PLATFORM_AI_DEGRADED, "reason": "unsupported_platform"}
+    result = _run_json(
+        ["opencli", "xiaohongshu", "ask", query, "--source-limit", str(source_limit), *OPENCLI_FLAGS],
+        timeout=timeout,
+    )
+    if not result["ok"]:
+        return {
+            "ok": False,
+            "platform": platform,
+            "degraded": PLATFORM_AI_DEGRADED,
+            "reason": str(result.get("error") or "platform_ai_failed"),
+            "message": str(result.get("message") or "")[:500],
+        }
+    lead = _platform_lead(result.get("data"), platform)
+    return {"ok": True, "platform": platform, "lead": lead}
+
+
+def discover_platform_lead(
+    location: str,
+    request: str = "",
+    timeout: int = DEFAULT_TIMEOUT,
+    source_limit: int = 10,
+) -> dict[str, Any]:
+    """Ask Xiaohongshu AI for directions and concrete stores for a location."""
+    location = str(location or "").strip()
+    query = request.strip() if request.strip() else "{}附近今晚吃什么？先给吃法方向，再给具体店铺并附引用来源".format(location)
+    return ask_platform_ai(query, timeout=timeout, source_limit=source_limit)
 
 
 def search_keywords(
