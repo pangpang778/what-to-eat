@@ -46,3 +46,19 @@ grill-me 式的需求澄清：零输入时反问缺失的关键项（地点/忌�
 - Evidence: source title, author, URL, date, and note content; social content remains untrusted.
 - Final decision: one executable store selected from the remaining candidates.
 - Feedback: meal result and reason tags attached to the matching decision state.
+
+## 平台 AI 线索（Platform AI Lead）
+
+平台自身的 AI 搜索或问答返回的吃法方向、店铺候选和引用来源。它只能作为候选线索，内容始终是 untrusted；没有来源时只能帮助确定吃法方向，不能作为店铺证据。
+
+## 平台 AI 能力（Platform AI Capability）
+
+一个平台提供的只读 AI 搜索入口。what-to-eat 启动时发现当前可用能力；用户明确指定平台时优先使用该平台。每个平台最多调用一次，最多并行三个平台。
+
+## 平台来源核对（Platform Source Verification）
+
+平台 AI 返回候选后，what-to-eat 重新读取引用的原始笔记，核对店名、描述、时间和来源。平台 AI 的总结不替代原始笔记。
+
+## 平台降级（Platform Degradation）
+
+平台 AI 超时、失败、无来源或来源不可复核时，跳过该平台并继续其他平台或普通采集；结果必须记录降级原因。平台 AI 不可用不应阻塞最终拍板。

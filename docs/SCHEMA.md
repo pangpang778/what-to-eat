@@ -74,3 +74,15 @@
 - candidates[].open_now, available, distance_ok, and budget_ok: optional hard signals; false removes the candidate before ranking.
 - memory.feedback[]: pick, rating, context, reason, and date for contextual learning.
 - JEV supplies evidence quality only. It does not decide user fit, availability, or the final store.
+
+## 平台 AI 线索补充
+
+- platform_leads[]：平台 AI 返回的方向、店铺候选和引用来源。
+- platform_leads[].platform：来源平台名称。
+- platform_leads[].direction：平台建议的吃法方向。
+- platform_leads[].store_candidates[]：平台建议的具体店铺。
+- platform_leads[].sources[]：引用的原始笔记，必须包含 URL 或明确标记为不可复核。
+- platform_leads[].untrusted：固定为 true；平台 AI 总结不能直接进入最终拍板理由。
+- pipeline.platform_ai：平台调用数量、成功数量、失败原因和来源核对数量。
+- 用户指定平台时，该平台优先；没有指定平台时，从当前可用的只读 AI 能力中最多并行三个。
+- 平台 AI 失败时继续普通采集或其他平台；不调用发布、点赞、评论、收藏等写操作。
