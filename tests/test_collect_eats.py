@@ -223,7 +223,10 @@ class SearchKeywordsV2Tests(unittest.TestCase):
 
     def test_collect_passes_constraints_through(self):
         # collect(constraints=…) → 搜索词带意图
-        with mock.patch.object(collect_eats, "search_keywords", wraps=collect_eats.search_keywords) as spy:
+        note = {"title": "宁海食府", "author": "本地人"}
+        with mock.patch.object(collect_eats, "search_keywords", wraps=collect_eats.search_keywords) as spy, mock.patch.object(
+            collect_eats, "_search_notes", return_value=([note], None)
+        ):
             collect_eats.collect("宁波", Path("build/test-constraints"), constraints={"party": "堂食 2 人"})
             called = spy.call_args
         self.assertEqual(called.args[1], {"party": "堂食 2 人"})

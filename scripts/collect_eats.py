@@ -11,18 +11,19 @@
 
 from __future__ import annotations
 
+import http.client
+import ipaddress
 import json
 import re
 import shutil
+import socket
 import subprocess
 import urllib.parse
-import http.client
-import ipaddress
-import socket
-from urllib.parse import urlparse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 DEFAULT_TIMEOUT = 120
 IMAGE_TIMEOUT = 30
@@ -30,6 +31,8 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 TOOL = "opencli"
 DEGRADED = "collect_failed"
 PLATFORM_AI_DEGRADED = "platform_ai_failed"
+PLATFORM_AI_PLATFORMS = ("xiaohongshu",)
+PLATFORM_AI_MAX_CALLS = 3
 CREDIBILITY = "untrusted · 小红书 UGC（OpenCLI 采集）"
 
 # 双关键词搜索策略（CONTEXT.md「采集」）：两词都搜，结果按 url 去重合并
@@ -208,9 +211,55 @@ def _platform_lead(data: Any, platform: str) -> dict[str, Any]:
         "direction": "" if direction == "美食" else direction,
         "store_candidates": names[:5],
         "sources": sources,
-        "answer": answer,
         "untrusted": True,
     }
+
+
+def _platform_name(value: Any) -> str:
+    name = str(value or "").strip().casefold()
+    return {"xhs": "xiaohongshu", "小红书": "xiaohongshu"}.get(name, name)
+
+
+def discover_platform_capabilities(
+    platforms: list[str] | None = None,
+    timeout: int = 10,
+) -> dict[str, Any]:
+    """Probe supported OpenCLI adapters for an AI ask command with citations."""
+    capabilities: list[str] = []
+    failures: list[dict[str, str]] = []
+    for raw_platform in PLATFORM_AI_PLATFORMS if platforms is None else platforms:
+        platform = _platform_name(raw_platform)
+        if platform not in PLATFORM_AI_PLATFORMS:
+            failures.append({"platform": platform, "reason": "unsupported_platform"})
+            continue
+        result = _run_json(
+            ["opencli", platform, "--help", "-f", "json"], timeout=timeout
+        )
+        if not result.get("ok"):
+            failures.append({
+                "platform": platform,
+                "reason": str(result.get("error") or "capability_discovery_failed"),
+            })
+            continue
+        data = result.get("data")
+        commands = data.get("commands", []) if isinstance(data, dict) else []
+        commands = commands if isinstance(commands, list) else []
+        has_cited_ask = any(
+            isinstance(command, dict)
+            and command.get("name") == "ask"
+            and {"answer", "sources"}.issubset(set(command.get("columns") or []))
+            for command in commands
+        )
+        if has_cited_ask:
+            capabilities.append(platform)
+        else:
+            failures.append({"platform": platform, "reason": "ask_unavailable"})
+    return {"capabilities": capabilities, "failures": failures}
+
+
+def _clean_platform_store_name(value: Any) -> str:
+    name = str(value or "").strip()
+    return re.sub(r"(?:探店|实测|打卡|测评|笔记|清单|合集)$", "", name).strip()
 
 
 def verify_platform_lead(
@@ -226,28 +275,68 @@ def verify_platform_lead(
     verified_lead = dict(lead) if isinstance(lead, dict) else {}
     raw_sources = verified_lead.get("sources")
     sources = raw_sources if isinstance(raw_sources, list) else []
+    platform = _platform_name(verified_lead.get("platform"))
+    raw_candidates = verified_lead.get("store_candidates")
+    candidates = [
+        _clean_platform_store_name(name)
+        for name in (raw_candidates if isinstance(raw_candidates, list) else [])
+        if isinstance(name, str) and _clean_platform_store_name(name)
+    ]
     checked: list[dict[str, Any]] = []
     verified_count = 0
     degraded_count = 0
     for raw in sources:
         source = dict(raw) if isinstance(raw, dict) else {"url": str(raw or "")}
+        source.setdefault("platform", platform)
         url = str(source.get("url") or "").strip()
         source["content"] = ""
         source["verified"] = False
-        if not url or urlparse(url).scheme not in {"http", "https"}:
+        try:
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").casefold()
+        except ValueError:
+            parsed = None
+            host = ""
+        xhs_host = host in {"xiaohongshu.com", "xhslink.com"} or host.endswith(
+            (".xiaohongshu.com", ".xhslink.com")
+        )
+        if platform != "xiaohongshu" or parsed is None or parsed.scheme != "https" or not xhs_host:
             source["degraded"] = "invalid_citation"
             degraded_count += 1
             checked.append(source)
             continue
-        result = _read_note(url, timeout)
+        try:
+            result = _read_note(url, timeout)
+        except Exception as exc:  # noqa: BLE001 - a failed citation must not stop other citations
+            result = {"ok": False, "error": "source_unavailable", "message": str(exc)}
         if result.get("ok") and result.get("data") is not None:
-            content, _, _ = _detail_fields(result.get("data"))
+            details = result.get("data")
+            if isinstance(details, list) and all(
+                isinstance(item, dict) and "field" in item for item in details
+            ):
+                details = {item["field"]: item.get("value") for item in details}
+            details = details if isinstance(details, dict) else {}
+            content, _, _ = _detail_fields(details)
             source["content"] = content
-            source["verified"] = bool(content)
+            for key, aliases in {
+                "title": ("title", "name"),
+                "author": ("author", "author_name"),
+                "date": ("date", "published_at", "publish_time", "time"),
+            }.items():
+                actual = next((str(details.get(alias) or "").strip() for alias in aliases
+                               if str(details.get(alias) or "").strip()), "")
+                if actual:
+                    source[key] = actual
+            source["verified_store_candidates"] = [
+                name for name in candidates if name.casefold() in content.casefold()
+            ]
+            source["verified"] = bool(content) and (
+                not candidates or bool(source["verified_store_candidates"])
+            )
             if source["verified"]:
                 verified_count += 1
             else:
-                source["degraded"] = "source_empty"
+                source["degraded"] = "source_empty" if not content else "store_not_in_source"
                 degraded_count += 1
         else:
             source["degraded"] = "source_unavailable"
@@ -257,6 +346,8 @@ def verify_platform_lead(
     verified_lead["sources"] = checked
     if degraded_count:
         verified_lead["degraded"] = "platform_source_verification"
+    elif not checked:
+        verified_lead["degraded"] = "platform_ai_no_sources"
     else:
         verified_lead.pop("degraded", None)
     return {
@@ -274,6 +365,7 @@ def ask_platform_ai(
 ) -> dict[str, Any]:
     """Call a platform's read-only AI search and return a normalized lead."""
     query = str(query or "").strip()
+    platform = _platform_name(platform)
     if not query:
         return {"ok": False, "platform": platform, "degraded": PLATFORM_AI_DEGRADED, "reason": "empty_query"}
     if platform != "xiaohongshu":
@@ -304,6 +396,167 @@ def discover_platform_lead(
     location = str(location or "").strip()
     query = request.strip() if request.strip() else "{}附近今晚吃什么？先给吃法方向，再给具体店铺并附引用来源".format(location)
     return ask_platform_ai(query, timeout=timeout, source_limit=source_limit)
+
+
+def collect_platform_leads(
+    location: str,
+    constraints: dict[str, Any] | None = None,
+    preferred_platform: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+    """Try an explicitly selected platform first, then bounded automatic fallbacks."""
+    location = str(location or "").strip()
+    constraints = constraints if isinstance(constraints, dict) else {}
+    intent = [location]
+    intent.extend(
+        str(constraints[key]).strip()
+        for key in ("location_anchor", "cuisine_pref", "party", "budget")
+        if isinstance(constraints.get(key), str) and constraints[key].strip()
+    )
+    taboos = constraints.get("taboos")
+    if isinstance(taboos, list):
+        taboo_terms = [item.strip() for item in taboos if isinstance(item, str) and item.strip()]
+        if taboo_terms:
+            intent.append("忌口{}".format("、".join(taboo_terms)))
+    query = "{}附近今晚吃什么？先给吃法方向，再给具体店铺并附引用来源".format(
+        " ".join(intent)
+    )
+    metadata: dict[str, Any] = {
+        "calls": 0,
+        "successes": 0,
+        "failures": [],
+        "degraded_reasons": [],
+        "source_verification": {"total": 0, "verified": 0, "degraded": 0},
+    }
+    leads: list[dict[str, Any]] = []
+    if not location:
+        metadata["degraded_reasons"].append("platform_ai_skipped:empty_location")
+        return {"leads": leads, "metadata": metadata}
+
+    def record_failure(platform: str, reason: str, stage: str) -> None:
+        failure = {"platform": platform, "stage": stage, "reason": reason}
+        metadata["failures"].append(failure)
+        prefix = "platform_ai_discovery_failed" if stage == "discovery" else PLATFORM_AI_DEGRADED
+        metadata["degraded_reasons"].append(f"{prefix}:{platform}:{reason}")
+
+    def discover(platforms: list[str]) -> list[str]:
+        found = discover_platform_capabilities(platforms, timeout=min(timeout, 10))
+        for failure in found["failures"]:
+            record_failure(failure["platform"], failure["reason"], "discovery")
+        return found["capabilities"]
+
+    def run_platform(platform: str) -> dict[str, Any]:
+        try:
+            answer = ask_platform_ai(query, platform=platform, timeout=timeout)
+            if not answer.get("ok"):
+                return {"ok": False, "platform": platform,
+                        "reason": str(answer.get("reason") or PLATFORM_AI_DEGRADED)}
+            raw_lead = answer.get("lead")
+            raw_lead = raw_lead if isinstance(raw_lead, dict) else {}
+            verification = verify_platform_lead(raw_lead, timeout=timeout)
+            lead = verification.get("lead") or raw_lead
+            lead["source_verification"] = verification.get("summary", {})
+            return {"ok": True, "platform": platform, "lead": lead,
+                    "verification": verification.get("summary", {})}
+        except Exception as exc:  # noqa: BLE001 - isolate failures to this platform
+            return {"ok": False, "platform": platform, "reason": "internal_error",
+                    "message": str(exc)[:200]}
+
+    def record_result(result: dict[str, Any]) -> None:
+        platform = result["platform"]
+        if not result["ok"]:
+            record_failure(platform, result.get("reason", PLATFORM_AI_DEGRADED), "call")
+            return
+        lead = result["lead"]
+        verification = result["verification"]
+        leads.append(lead)
+        metadata["successes"] += 1
+        for key in ("total", "verified", "degraded"):
+            metadata["source_verification"][key] += int(verification.get(key, 0))
+        if not lead.get("sources"):
+            metadata["degraded_reasons"].append(f"platform_ai_no_sources:{platform}")
+        elif verification.get("degraded"):
+            metadata["degraded_reasons"].append(
+                f"platform_source_verification:{platform}:{verification['degraded']}"
+            )
+
+    preferred = _platform_name(preferred_platform)
+    remaining = list(PLATFORM_AI_PLATFORMS)
+    attempted: set[str] = set()
+    if preferred:
+        available = discover([preferred])
+        remaining = [platform for platform in remaining if platform != preferred]
+        if preferred in available:
+            attempted.add(preferred)
+            metadata["calls"] += 1
+            result = run_platform(preferred)
+            record_result(result)
+            if result["ok"]:
+                return {"leads": leads, "metadata": metadata}
+
+    available = discover(remaining)
+    selected = list(dict.fromkeys(
+        platform for platform in available if platform not in attempted
+    ))[: max(0, PLATFORM_AI_MAX_CALLS - metadata["calls"])]
+    if selected:
+        metadata["calls"] += len(selected)
+        with ThreadPoolExecutor(max_workers=min(PLATFORM_AI_MAX_CALLS, len(selected))) as executor:
+            futures = {platform: executor.submit(run_platform, platform) for platform in selected}
+            results = {platform: future.result() for platform, future in futures.items()}
+        for platform in selected:
+            record_result(results[platform])
+    if not selected and not leads and not metadata["failures"]:
+        metadata["degraded_reasons"].append("platform_ai_unavailable")
+    return {"leads": leads, "metadata": metadata}
+
+
+def platform_lead_candidates(leads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build store candidates only from cited leads, retaining unverifiable citations as weak."""
+    candidates: list[dict[str, Any]] = []
+    for lead in leads:
+        if not isinstance(lead, dict):
+            continue
+        platform = _platform_name(lead.get("platform"))
+        raw_sources = lead.get("sources")
+        sources = [
+            dict(source) for source in (raw_sources if isinstance(raw_sources, list) else [])
+            if isinstance(source, dict) and str(source.get("url") or "").strip()
+        ]
+        for source in sources:
+            source.setdefault("platform", platform)
+        if not sources:
+            continue
+        raw_names = lead.get("store_candidates")
+        for raw_name in raw_names if isinstance(raw_names, list) else []:
+            if not isinstance(raw_name, str):
+                continue
+            name = _clean_platform_store_name(raw_name)
+            if not name:
+                continue
+            supporting = [
+                source for source in sources
+                if source.get("verified") and name.casefold() in str(source.get("content") or "").casefold()
+            ]
+            unverified = [source for source in sources if not source.get("verified")]
+            candidate_sources = supporting + [
+                source for source in unverified if source not in supporting
+            ]
+            if not candidate_sources:
+                continue
+            first = candidate_sources[0]
+            content = str(first.get("content") or "") if supporting else ""
+            candidates.append({
+                "name": name,
+                "category": lead.get("direction") or _category(content),
+                "description": (content.splitlines() or [""])[0][:120],
+                "direction": lead.get("direction", ""),
+                "note_source": {key: first.get(key) for key in ("title", "author", "url") if first.get(key)},
+                "sources": candidate_sources,
+                "platforms": [platform],
+                "platform_ai_unverified": not bool(supporting),
+                "credibility": "untrusted · 平台 AI 线索与社交平台来源",
+            })
+    return candidates
 
 
 def search_keywords(
@@ -705,6 +958,11 @@ def _collect(
         note_source: dict[str, Any] = {"title": title, "author": author}
         if url:
             note_source["url"] = url
+        published_at = str(
+            note.get("date") or note.get("published_at") or note.get("time") or ""
+        ).strip()
+        if published_at:
+            note_source["date"] = published_at
 
         text = text.strip()
         names = _store_names(note, text) if stores_only else ([title] if title else [])
@@ -724,6 +982,13 @@ def _collect(
                 "category": category,
                 "description": description,
                 "note_source": dict(note_source),
+                "sources": [{
+                    **note_source,
+                    "platform": "xiaohongshu",
+                    "verified": bool(text),
+                    "credibility": CREDIBILITY,
+                }],
+                "platforms": ["xiaohongshu"],
             }
             if localized:
                 candidate["image"] = dict(localized[0])
