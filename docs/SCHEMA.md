@@ -8,6 +8,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `location` | `string` | 地点（城市/商圈）。可由宿主 AI 从上下文或记忆文件推断 |
+| `platform` | `string?` | 用户指定的平台；优先调用它，失败后再尝试其他已发现能力 |
 | `constraints.taboos[]` | `string[]` | 忌口/过敏/不吃辣（硬过滤） |
 | `constraints.location_anchor` | `string \| {"no_preference": true}?` | 位置锚点（如 "天一广场附近"）→ 细化搜索词；不做坐标过滤 |
 | `constraints.cuisine_pref` | `string \| {"no_preference": true}?` | 口味/菜系偏向（如 "湘菜"）→ 拍板排序加权（加权系数见下），不硬剪 |
@@ -32,6 +33,9 @@
 | `description` | `string` | 一句话描述（宿主 AI 从笔记提取，禁止编造笔记外信息） |
 | `image` | `object?` | `{url（本地相对路径）, source, credibility, alt_description, jev_score?, adopted?}`。仅 jev 达标（≥阈值 7）图片 adopted=true 可入 verdict |
 | `note_source` | `object` | `{title, author, url?}`——来源笔记，untrusted 铁律的载体 |
+| `sources[]` | `object[]?` | `{platform, title, author, url, date?, content?, verified, degraded?}`——合并候选时保留全部原始来源 |
+| `platforms[]` | `string[]?` | 候选来源平台 |
+| `platform_ai_unverified` | `bool?` | 引用无法核对时保留候选，证据权重为 0 并显式标记 |
 | `ll` | `[lng,lat]?` | 店铺坐标（有则保留，无则省略，禁止编造） |
 
 ## 判词（verdict）
@@ -42,6 +46,8 @@
 | `reason` | `string` | 一句话理由，必须由 schema 真实字段支撑（热度/匹配/没吃过/省时），无编造 |
 | `image` | `object?` | 达标候选的 image 原样（untrusted 标记随之） |
 | `alternates_hint[]` | `string[]` | 「换一个」的次优候选名（≤3） |
+| `source_platforms[]` | `string[]?` | 当前拍板候选的来源平台 |
+| `sources[]` | `object[]?` | `{platform, title, author, url, date?, verified, degraded?}`——真实原文链接；不包含平台 AI 总结原文 |
 | `degraded[]` | `string[]` | 显式降级记录（如 "collect_failed: 启发式孪生"、"jev_disabled: 宿主 AI 复核"、"limit_reached"） |
 | `all_candidates_rejected` | `bool?` | jev 全拒 → 启发式孪生拍板（degraded 同步记录） |
 
@@ -58,7 +64,8 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `alerts[]` | `object[]?` | `{source: "JEV"\|"RULE", type, title, detail, level: "advisory"}`（本 skill 无 blocking——拍板永不失败） |
-| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok: bool, calls: int, limit: int, threshold: float, adopted: int, degraded: bool, reason?: string}}`——对话内披露 |
+| `platform_leads[]` | `object[]?` | `{platform, direction, store_candidates[], sources[], untrusted: true, degraded?}`——平台 AI 线索，不直接作为店铺证据 |
+| `pipeline` | `object?` | `{collect: {ok, notes, images, tool, degraded?}, jev: {ok, calls, limit, threshold, adopted, degraded, reason?}, platform_ai: {calls, successes, failures[], degraded_reasons[], source_verification: {total, verified, degraded}}}` |
 
 ## 兼容规则
 
@@ -83,6 +90,7 @@
 - platform_leads[].store_candidates[]：平台建议的具体店铺。
 - platform_leads[].sources[]：引用的原始笔记，必须包含 URL 或明确标记为不可复核。
 - platform_leads[].untrusted：固定为 true；平台 AI 总结不能直接进入最终拍板理由。
+- request.platform：用户指定时先调用；失败后尝试其他已发现能力，每个平台每轮至多一次，总调用不超过三个。
 - pipeline.platform_ai：平台调用数量、成功数量、失败原因和来源核对数量。
 - 用户指定平台时，该平台优先；没有指定平台时，从当前可用的只读 AI 能力中最多并行三个。
 - 平台 AI 失败时继续普通采集或其他平台；不调用发布、点赞、评论、收藏等写操作。

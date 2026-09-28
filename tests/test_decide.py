@@ -61,7 +61,7 @@ class FakeJev:
         return {"ok": True, "score": value, "degraded": False, "reason": None}
 
 
-def run(cands, scores, memory=None, request=None, enabled=True):
+def run(cands, scores, memory=None, request=None, enabled=True, platform_result=None):
     """跑管线：mock collect 与 JevClient；记忆写临时文件。"""
     mem = memory if memory is not None else {
         "eaten_log": [], "taboos": [], "weights": {}
@@ -71,6 +71,12 @@ def run(cands, scores, memory=None, request=None, enabled=True):
         mem_path = Path(tmp) / "memory.json"
         memory_mod.save_memory(mem_path, mem)
         with mock.patch.object(
+            decide.collect_eats, "collect_platform_leads",
+            return_value=platform_result or {"leads": [], "metadata": {
+                "calls": 0, "successes": 0, "failures": [], "degraded_reasons": [],
+                "source_verification": {"total": 0, "verified": 0, "degraded": 0},
+            }},
+        ), mock.patch.object(
             decide.collect_eats, "collect_two_stage",
             return_value={"ok": True, "candidates": cands, "notes": 3, "images": 4,
                           "tool": "opencli"},
@@ -152,6 +158,11 @@ class CollectFailedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             mem_path = Path(tmp) / "memory.json"
             with mock.patch.object(
+                decide.collect_eats, "collect_platform_leads",
+                return_value={"leads": [], "metadata": {"calls": 0, "successes": 0,
+                    "failures": [], "degraded_reasons": [],
+                    "source_verification": {"total": 0, "verified": 0, "degraded": 0}}},
+            ), mock.patch.object(
                 decide.collect_eats, "collect_two_stage",
                 return_value={"ok": False, "candidates": [], "notes": 0,
                               "images": 0, "tool": "opencli",
@@ -166,6 +177,151 @@ class CollectFailedTests(unittest.TestCase):
         self.assertTrue(any(a["source"] == "RULE" for a in result["alerts"]))
         self.assertFalse(result["pipeline"]["collect"]["ok"])
         self.assertTrue(result["pipeline"]["jev"]["degraded"])
+
+
+class PlatformPipelineTests(unittest.TestCase):
+    def test_platform_failure_falls_through_to_ordinary_collection(self):
+        platform_result = {"leads": [], "metadata": {
+            "calls": 2,
+            "successes": 0,
+            "failures": [{"platform": "xiaohongshu", "stage": "call", "reason": "timeout"}],
+            "degraded_reasons": ["platform_ai_failed:xiaohongshu:timeout"],
+            "source_verification": {"total": 0, "verified": 0, "degraded": 0},
+        }}
+        result, _ = run(
+            fresh_candidates(), [8.7, 9.1, 6.2, 8.4], platform_result=platform_result
+        )
+
+        self.assertTrue(result["pipeline"]["collect"]["ok"])
+        self.assertEqual(result["pipeline"]["platform_ai"]["calls"], 2)
+        self.assertIn("platform_ai_failed:xiaohongshu:timeout", result["verdict"]["degraded"])
+
+    def test_verified_leads_merge_with_collection_and_publish_source_links(self):
+        lead = {
+            "platform": "xiaohongshu",
+            "direction": "湘菜",
+            "store_candidates": ["宁海食府"],
+            "sources": [{
+                "platform": "xiaohongshu",
+                "title": "宁海食府探店",
+                "author": "甲",
+                "url": "https://www.xiaohongshu.com/explore/a1",
+                "date": "2026-09-20",
+                "content": "宁海食府：招牌海鲜，晚上营业",
+                "verified": True,
+                "credibility": "untrusted",
+            }],
+            "untrusted": True,
+        }
+        citationless = {
+            "platform": "xiaohongshu",
+            "direction": "烧烤",
+            "store_candidates": ["无来源店"],
+            "sources": [],
+            "untrusted": True,
+        }
+        metadata = {
+            "calls": 1,
+            "successes": 1,
+            "failures": [],
+            "degraded_reasons": ["platform_ai_no_sources:xiaohongshu"],
+            "source_verification": {"total": 1, "verified": 1, "degraded": 0},
+        }
+        ordinary = {
+            "name": "宁海食府",
+            "category": "湘菜",
+            "description": "宁海食府本地笔记",
+            "note_source": {"title": "宁海食府本地笔记", "author": "乙", "url": "https://www.xiaohongshu.com/explore/a2"},
+            "sources": [{
+                "platform": "xiaohongshu",
+                "title": "宁海食府本地笔记",
+                "author": "乙",
+                "url": "https://www.xiaohongshu.com/explore/a2",
+                "verified": True,
+            }],
+            "platforms": ["xiaohongshu"],
+        }
+        captured = {}
+
+        def collect(_location, _workdir, constraints=None, directions=None):
+            captured["directions"] = directions
+            return {"ok": True, "candidates": [ordinary], "notes": 1, "images": 0, "tool": "opencli"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            memory_path = Path(tmp) / "memory.json"
+            with mock.patch.object(
+                decide.collect_eats, "collect_platform_leads",
+                return_value={"leads": [lead, citationless], "metadata": metadata},
+            ), mock.patch.object(
+                decide.collect_eats, "collect_two_stage", side_effect=collect
+            ), mock.patch.object(
+                decide.jev_client, "material_point_enabled", return_value=False
+            ):
+                result = decide.run_pipeline(
+                    {"location": LOCATION, "constraints": {}, "mode": "decide"},
+                    tmp,
+                    memory_path,
+                    today=TODAY,
+                )
+
+            recorded = memory_mod.load_memory(memory_path)
+
+        self.assertEqual(captured["directions"], ["湘菜", "烧烤"])
+        self.assertEqual([c["name"] for c in result["candidates"]], ["宁海食府"])
+        self.assertEqual(len(result["candidates"][0]["sources"]), 2)
+        self.assertEqual(result["verdict"]["source_platforms"], ["xiaohongshu"])
+        self.assertEqual(
+            {source["url"] for source in result["verdict"]["sources"]},
+            {"https://www.xiaohongshu.com/explore/a1", "https://www.xiaohongshu.com/explore/a2"},
+        )
+        self.assertEqual(result["pipeline"]["platform_ai"]["successes"], 1)
+        self.assertEqual(recorded["eaten_log"][-1]["pick"], "宁海食府")
+        self.assertEqual(set(recorded["eaten_log"][-1]), {"location", "pick", "date"})
+
+    def test_unverifiable_cited_candidate_survives_at_zero_evidence(self):
+        lead = {
+            "platform": "xiaohongshu",
+            "direction": "湘菜",
+            "store_candidates": ["宁海食府"],
+            "sources": [{
+                "platform": "xiaohongshu",
+                "title": "宁海食府探店",
+                "author": "甲",
+                "url": "https://www.xiaohongshu.com/explore/a1",
+                "verified": False,
+                "degraded": "source_unavailable",
+            }],
+            "untrusted": True,
+        }
+        metadata = {
+            "calls": 1,
+            "successes": 1,
+            "failures": [],
+            "degraded_reasons": ["platform_source_verification:xiaohongshu:1"],
+            "source_verification": {"total": 1, "verified": 0, "degraded": 1},
+        }
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            decide.collect_eats, "collect_platform_leads",
+            return_value={"leads": [lead], "metadata": metadata},
+        ), mock.patch.object(
+            decide.collect_eats, "collect_two_stage",
+            return_value={"ok": False, "candidates": [], "notes": 0, "images": 0,
+                          "tool": "opencli", "degraded": "collect_failed"},
+        ), mock.patch.object(
+            decide.jev_client, "material_point_enabled", return_value=False
+        ):
+            result = decide.run_pipeline(
+                {"location": LOCATION, "constraints": {}, "mode": "decide"},
+                tmp,
+                Path(tmp) / "memory.json",
+                today=TODAY,
+            )
+
+        self.assertEqual(result["verdict"]["pick"]["name"], "宁海食府")
+        self.assertIn("引用来源不可复核", result["verdict"]["reason"])
+        self.assertIn("证据质量 0.0", result["verdict"]["reason"])
+        self.assertEqual(result["verdict"]["sources"][0]["verified"], False)
+        self.assertIn("collect_failed: 使用平台线索继续拍板", result["verdict"]["degraded"])
 
 
 class AlternateModeTests(unittest.TestCase):
@@ -345,6 +501,11 @@ class IntentV2Tests(unittest.TestCase):
             mem_path = Path(tmp) / "memory.json"
             memory_mod.save_memory(mem_path, mem)
             with mock.patch.object(
+                decide.collect_eats, "collect_platform_leads",
+                return_value={"leads": [], "metadata": {"calls": 0, "successes": 0,
+                    "failures": [], "degraded_reasons": [],
+                    "source_verification": {"total": 0, "verified": 0, "degraded": 0}}},
+            ), mock.patch.object(
                 decide.collect_eats, "collect_two_stage",
                 return_value={"ok": True, "candidates": fresh_candidates(),
                               "notes": 3, "images": 4, "tool": "opencli"},

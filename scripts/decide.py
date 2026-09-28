@@ -47,7 +47,8 @@ def run_pipeline(
     today: date | None = None,
 ) -> dict[str, Any]:
     """完整拍板编排，返回 docs/SCHEMA.md 缝形状：
-    {request, candidates, verdict, memory, alerts, pipeline{collect, jev}}。
+    {request, candidates, platform_leads, verdict, memory, alerts,
+    pipeline{collect, jev, platform_ai}}。
     """
     today = today or date.today()
     alerts: list[dict[str, Any]] = []
@@ -62,10 +63,41 @@ def run_pipeline(
     ]
     intent_context = "；用餐场景/意图：{}".format("，".join(_ctx_parts)) if _ctx_parts else ""
 
+    try:
+        platform_result = collect_eats.collect_platform_leads(
+            location,
+            constraints=constraints,
+            preferred_platform=request.get("platform"),
+        )
+    except Exception as exc:  # noqa: BLE001 - keep platform failures on the degraded path
+        platform_result = {
+            "leads": [],
+            "metadata": {
+                "calls": 0,
+                "successes": 0,
+                "failures": [{"stage": "call", "reason": "internal_error"}],
+                "degraded_reasons": ["platform_ai_failed:internal_error"],
+                "source_verification": {"total": 0, "verified": 0, "degraded": 0},
+                "message": str(exc)[:200],
+            },
+        }
+    platform_leads = platform_result.get("leads") or []
+    platform_metadata = platform_result.get("metadata") or {}
+    degraded.extend(
+        reason for reason in platform_metadata.get("degraded_reasons", [])
+        if isinstance(reason, str) and reason not in degraded
+    )
+    platform_directions = list(dict.fromkeys(
+        str(lead.get("direction", "")).strip()
+        for lead in platform_leads
+        if isinstance(lead, dict) and str(lead.get("direction", "")).strip()
+    ))[:3]
+
     # 1. 采集（collect 自身承诺不抛；双保险）
     try:
         collected = collect_eats.collect_two_stage(
-            location, workdir, constraints=constraints
+            location, workdir, constraints=constraints,
+            directions=platform_directions or None,
         )
     except Exception as exc:
         collected = {
@@ -78,18 +110,36 @@ def run_pipeline(
             "message": str(exc)[:200],
         }
     raw_candidates = collected.get("candidates") or []
-    candidates = [
+    collected_candidates = [
         cand
         for cand in raw_candidates
         if isinstance(cand, dict) and str(cand.get("name", "")).strip()
     ]
-    if len(candidates) != len(raw_candidates):
+    if len(collected_candidates) != len(raw_candidates):
         degraded.append("collect_invalid_candidates: 已剔除无效候选")
-    if not collected.get("ok") or not candidates:
+    platform_candidates = collect_eats.platform_lead_candidates(platform_leads)
+    candidates = _merge_candidates(
+        [cand for cand in platform_candidates if not cand.get("platform_ai_unverified")],
+        collected_candidates + [
+            cand for cand in platform_candidates if cand.get("platform_ai_unverified")
+        ],
+    )
+    if not collected.get("ok"):
+        if candidates:
+            degraded.append("collect_failed: 使用平台线索继续拍板")
+        else:
+            return _fallback(
+                request, collected, "collect_failed: 启发式孪生",
+                degraded, alerts, summary=None,
+                today=today, location=location, memory_path=memory_path,
+                platform_result=platform_result,
+            )
+    if not candidates:
         return _fallback(
             request, collected, "collect_failed: 启发式孪生",
             degraded, alerts, summary=None,
             today=today, location=location, memory_path=memory_path,
+            platform_result=platform_result,
         )
 
     # 2. jev 素材筛选
@@ -172,6 +222,7 @@ def run_pipeline(
             request, collected, "feasibility_filtered_all: 启发式孪生",
             degraded, alerts, summary=summary,
             today=today, location=location, memory_path=memory_path,
+            platform_result=platform_result,
         )
 
     memory = memory_mod.load_memory(memory_path)
@@ -210,6 +261,7 @@ def run_pipeline(
         return _fallback(
             request, collected, reason, degraded, alerts, summary=summary,
             today=today, location=location, memory_path=memory_path,
+            platform_result=platform_result,
         )
 
     # 4. 拍板：jev_score × weight 降序 + 确定性抖动
@@ -219,7 +271,10 @@ def run_pipeline(
         score = (cand.get("image") or {}).get("jev_score")
         if not isinstance(score, (int, float)):
             score = cand.get("jev_score")
-        evidence = float(score) if isinstance(score, (int, float)) else 5.0
+        evidence = (
+            0.0 if cand.get("platform_ai_unverified")
+            else float(score) if isinstance(score, (int, float)) else 5.0
+        )
         fit = _fit_score(cand, constraints)
         convenience = _convenience_score(cand)
         weight = memory_mod._to_float(weights.get(str(cand.get("name", "")), 1.0))
@@ -255,16 +310,28 @@ def run_pipeline(
     )
     image = picked.get("image") if (picked.get("image") or {}).get("adopted") else None
 
+    platform_source_unverified = bool(picked.get("platform_ai_unverified"))
+    picked_evidence = (
+        0.0 if platform_source_unverified
+        else float(picked_score) if isinstance(picked_score, (int, float)) else 5.0
+    )
+    reason = (
+        "引用来源不可复核，证据质量按 0 计"
+        if platform_source_unverified
+        else _reason(picked_score, picked_weight, all_rejected, prev_pick)
+    )
+    if platform_source_unverified and prev_pick:
+        reason += "；已避开上一次拍板「{}」".format(prev_pick)
     verdict: dict[str, Any] = {
         "pick": {
             key: picked[key]
             for key in ("name", "category", "description")
             if picked.get(key)
         },
-        "reason": _reason(picked_score, picked_weight, all_rejected, prev_pick)
+        "reason": reason
         + " 当前匹配度 {:.1f}，证据质量 {:.1f}，方便程度 {:.1f}。".format(
             _fit_score(picked, constraints),
-            float(picked_score) if isinstance(picked_score, (int, float)) else 5.0,
+            picked_evidence,
             _convenience_score(picked),
         ),
         "alternates_hint": alternates,
@@ -274,6 +341,32 @@ def run_pipeline(
         verdict["image"] = image
     if all_rejected:
         verdict["all_candidates_rejected"] = True
+    sources = picked.get("sources") or []
+    if sources:
+        verdict["sources"] = [
+            {
+                key: source[key]
+                for key in (
+                    "platform", "title", "author", "url", "date", "verified",
+                    "degraded", "credibility",
+                )
+                if source.get(key) is not None
+            }
+            for source in sources if isinstance(source, dict)
+        ]
+    source_platforms = list(dict.fromkeys(
+        platform
+        for platform in picked.get("platforms", [])
+        if isinstance(platform, str) and platform
+    ))
+    if not source_platforms:
+        source_platforms = list(dict.fromkeys(
+            str(source.get("platform"))
+            for source in sources
+            if isinstance(source, dict) and source.get("platform")
+        ))
+    if source_platforms:
+        verdict["source_platforms"] = source_platforms
 
     # 6. 拍板自动记录
     try:
@@ -285,11 +378,77 @@ def run_pipeline(
     return {
         "request": request,
         "candidates": candidates,
+        "platform_leads": platform_leads,
         "verdict": verdict,
         "memory": memory,
         "alerts": alerts,
-        "pipeline": {"collect": collected, "jev": summary},
+        "pipeline": {
+            "collect": collected,
+            "jev": summary,
+            "platform_ai": platform_metadata,
+        },
     }
+
+
+def _merge_candidates(
+    primary: list[dict[str, Any]],
+    secondary: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    def source_key(source: dict[str, Any]) -> str:
+        fields = (source.get("platform"), source.get("title"), source.get("author"))
+        return str(source.get("url") or "|".join(str(value or "") for value in fields)).casefold()
+
+    merged: dict[str, dict[str, Any]] = {}
+    for raw in primary + secondary:
+        if not isinstance(raw, dict):
+            continue
+        candidate = dict(raw)
+        name = str(candidate.get("name", "")).strip()
+        key = " ".join(name.split()).casefold()
+        if not key:
+            continue
+        source_rows = candidate.get("sources")
+        sources = [dict(source) for source in source_rows if isinstance(source, dict)] \
+            if isinstance(source_rows, list) else []
+        if not sources and isinstance(candidate.get("note_source"), dict):
+            source = dict(candidate["note_source"])
+            source.setdefault("platform", "xiaohongshu")
+            source.setdefault("verified", bool(candidate.get("source_verified", False)))
+            sources.append(source)
+        candidate["sources"] = sources
+        platforms = candidate.get("platforms")
+        candidate["platforms"] = list(platforms) if isinstance(platforms, list) else []
+        candidate["platforms"] = list(dict.fromkeys(
+            candidate["platforms"] + [
+                source["platform"] for source in sources if source.get("platform")
+            ]
+        ))
+
+        current = merged.get(key)
+        if current is None:
+            merged[key] = candidate
+            continue
+        existing_sources = current["sources"]
+        existing_by_key = {source_key(source): source for source in existing_sources}
+        for source in sources:
+            key = source_key(source)
+            existing = existing_by_key.get(key)
+            if existing is None:
+                existing_sources.append(source)
+                existing_by_key[key] = source
+            elif source.get("verified") and not existing.get("verified"):
+                existing.update(source)
+        for platform in candidate["platforms"]:
+            if platform not in current["platforms"]:
+                current["platforms"].append(platform)
+        for field in ("category", "description", "direction", "image"):
+            if not current.get(field) and candidate.get(field):
+                current[field] = candidate[field]
+        if current.get("platform_ai_unverified") and any(
+            source.get("verified") for source in existing_sources
+        ):
+            current["platform_ai_unverified"] = False
+    return list(merged.values())
 
 
 def _filter_feasibility(
@@ -347,6 +506,7 @@ def _fallback(
     today: date,
     location: str,
     memory_path: str | Any,
+    platform_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """兜底信封：启发式孪生 verdict + 显式降级披露。"""
     degraded = [reason] + [d for d in degraded if d != reason]
@@ -384,10 +544,15 @@ def _fallback(
     return {
         "request": request,
         "candidates": collected.get("candidates") or [],
+        "platform_leads": (platform_result or {}).get("leads") or [],
         "verdict": verdict,
         "memory": memory,
         "alerts": alerts,
-        "pipeline": {"collect": collected, "jev": summary},
+        "pipeline": {
+            "collect": collected,
+            "jev": summary,
+            "platform_ai": (platform_result or {}).get("metadata") or {},
+        },
     }
 
 

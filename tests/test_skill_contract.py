@@ -76,8 +76,8 @@ class TriggerBoundaryTests(unittest.TestCase):
 
 class OutputFormatTests(unittest.TestCase):
     def test_verdict_output_example_present(self):
-        # 输出格式示例：菜名行 / 理由 / 图 / 来源 / 换一个提示
-        for keyword in ("今晚吃这个", "理由", "![", "图源", "不吃这个"):
+        # 输出格式示例：菜名行 / 理由 / 来源链接 / 可选图片 / 换一个提示
+        for keyword in ("今晚吃这个", "理由", "![", "原文链接", "不吃这个"):
             self.assertIn(keyword, BODY)
 
     def test_example_carries_untrusted_marker(self):
